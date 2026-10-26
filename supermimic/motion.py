@@ -98,14 +98,21 @@ class MotionLib:
         return torch.minimum(fut, end.unsqueeze(-1))
 
     def goal(self, f: torch.Tensor, K: int) -> torch.Tensor:
-        """Goal features from the reference only: K future frames relative to the current reference frame."""
+        """K future reference frames, holding the final pose with zero velocity beyond the clip."""
         fut = self.future_frames(f, K)  # (B,K)
+        requested = f.unsqueeze(-1) + torch.arange(1, K + 1, device=f.device)
+        recorded = (requested <= self.clip_end[self.clip_id[f]].unsqueeze(-1)).unsqueeze(-1)
+        # Keep the recorded last-frame velocity; only the synthetic held-pose
+        # extension is stationary. Do not change velocities in ref_state/rewards.
+        v = torch.where(recorded, self.root_v_local[fut], 0.0)
+        w = torch.where(recorded, self.root_w_local[fut], 0.0)
+        qd = torch.where(recorded, self.qd[fut], 0.0)
         H = yaw_mat(self.root_R[f])  # (B,3,3)
         Ht = H.transpose(-1, -2).unsqueeze(1)
         dp = (Ht @ (self.root_p[fut] - self.root_p[f].unsqueeze(1)).unsqueeze(-1)).squeeze(-1)
         rot = mat_to_6d(Ht @ self.root_R[fut])
         feats = torch.cat(
-            (dp, rot, self.root_v_local[fut], self.root_w_local[fut], self.q[fut], self.qd[fut] * 0.1), -1
+            (dp, rot, v, w, self.q[fut], qd * 0.1), -1
         )  # (B,K,73)
         return feats.reshape(f.shape[0], -1)
 
