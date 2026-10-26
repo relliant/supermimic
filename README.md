@@ -25,6 +25,14 @@ motion. Clips: dance, jumps, fall-and-get-up, sprint.*
 
 Progress and timestamps: [MILESTONES.md](MILESTONES.md).
 
+## Onboard G1 deployment
+
+See [deployment/README.md](deployment/README.md) for the independent x86_64 CPU
+ONNX Runtime / SDK2 controller, checkpoint/reference export, parity checks and
+isolated DDS + MuJoCo simulation. It defaults to monitor-only and is **not yet
+hardware-qualified**. A successful simulation evaluation is not a safe-to-deploy
+claim; the deployment guide lists the remaining physical validation gates.
+
 ## Layout
 
 | Path | What |
@@ -43,7 +51,8 @@ Neither Isaac Lab nor any data is included in this repository; the steps below f
 
 **Requirements:** Linux, an NVIDIA GPU (tested: RTX PRO 6000 Blackwell, driver 580 / CUDA 13),
 Docker with the NVIDIA Container Toolkit (`docker run --gpus` must work), ~20 GB of disk for the
-images and ~0.2 GB for the data.
+images and ~0.2 GB for the data — or, instead of Docker, a working driver and uv for the host
+environment in step 1b.
 
 Physics: Newton with the MuJoCo-Warp solver (`NewtonCfg(MJWarpSolverCfg(...))`), no Kit, no PhysX;
 50 Hz control, 4 substeps of 5 ms, implicitfast integrator, MuJoCo collision pipeline.
@@ -73,6 +82,42 @@ Then start the long-lived container (repository mounted at `/workspace/supermimi
 ```bash
 docker/run_container.sh 0 128g     # GPU index 0, 128 GB memory cap
 ```
+
+### 1b. Alternative: the same environment on the host with uv
+
+The image above *is* a uv project: `IsaacLab/docker/Dockerfile.kitless` runs
+`uv sync --frozen --extra all --extra importers` inside the pinned checkout, which yields a Python
+3.12 environment (torch 2.11.0/cu130, newton, warp-lang 1.17.0, mujoco 3.15, isaaclab 3.0.0). The
+identical environment can be built without Docker (needs a working NVIDIA driver, uv >= 0.12 and
+~10 GB of disk):
+
+```bash
+tools/setup_uv.sh                                  # clone + checkout 46d6cc3, uv sync -> IsaacLab/.venv
+IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/lafan1_main
+```
+
+Run commands from the repository root: the code is used in place, not installed. MuJoCo, pillow
+and matplotlib are already in the Isaac Lab lock. Both `tools/setup_uv.sh` and the SuperMimic
+Dockerfile additionally install SwanLab from `docker/requirements.txt` for experiment logging.
+For `tools/render.py`, install
+`libegl1 libgl1 libopengl0` and `ffmpeg`; to keep the build caches next to the repository like
+`run_container.sh` does:
+
+```bash
+export WARP_CACHE_PATH=$PWD/.cache/warp TORCHINDUCTOR_CACHE_DIR=$PWD/.cache/inductor MPLCONFIGDIR=/tmp/mpl
+```
+
+`pyproject.toml` at the repository root is a **separate, Isaac-free** environment for the analysis
+tools that do not import `isaaclab` (`tools/plot.py`, `tools/render.py`,
+`tools/analyze_failure.py`, `tools/urdf_to_mjcf.py`, `supermimic/kinematics.py`):
+
+```bash
+uv sync                                            # -> .venv (torch 2.11, mujoco 3.15, numpy, matplotlib, pillow)
+uv run python tools/plot.py logs/lafan1_main --out results/success_curve.png
+```
+
+Training, evaluation, the environment tests and `tools/bench.py` import `isaaclab` (directly or via
+`supermimic.robot`) and therefore need the full environment, not this one.
 
 ### 2. Data: LAFAN1 motions and the G1 model
 
@@ -125,6 +170,55 @@ docker exec supermimic python tools/render.py traj.npz out.mp4 --clips dance2_su
 The first iterations are slow while `torch.compile` builds its kernels (cached in `.cache/`).
 Checkpoints are written every 2000 iterations to `logs/<run>/`; the eval watcher scores each on all
 40 clips and appends to `logs/<run>/eval.csv`.
+
+### SwanLab experiment logging
+
+Training and evaluation log to SwanLab **by default**, using workspace `relliant` and project
+`supermimic_g1`. Existing CSV logs and checkpoints are unchanged. Training uploads the CLI
+configuration and all CSV metrics under `train/` at `--log_every` intervals (default: 50
+iterations): world-model/policy/critic losses, rewards, episode statistics, gradient norm,
+imagined survival, learning rate, simulator steps, wall time and throughput. Evaluation uploads
+normalized returns, failed-clip count, success rate and per-clip returns under `eval/`, using
+the checkpoint iteration as the step.
+
+For an existing host environment, install the new dependency and log in once with a SwanLab
+account that has write access to `relliant`:
+
+```bash
+uv pip install --python IsaacLab/.venv/bin/python -r docker/requirements.txt
+IsaacLab/.venv/bin/swanlab login
+IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/lafan1_main
+```
+
+For Docker, rebuild the SuperMimic image and recreate the container before using it (a running
+container does not pick up a rebuilt image), then run `docker exec -it supermimic swanlab login`.
+For unattended jobs, inject `SWANLAB_API_KEY` into the **training/evaluation process environment**
+through your secret manager; do not commit API keys. Host environment variables are not
+automatically forwarded through `docker exec` or into an existing tmux server.
+
+By default, the experiment name is the basename of `--log_dir` (e.g. `lafan1_main`). The
+independent evaluator uses `<run>-eval` in a separate experiment so it can run alongside
+training without sharing a writer. Local SwanLab files are kept under
+`logs/<run>/swanlab/{training,evaluation}/`.
+
+Both entry points accept `--swanlab_workspace`, `--swanlab_project`, `--swanlab_name`,
+`--swanlab_mode {online,offline,disabled}` and `--swanlab_run_id`:
+
+```bash
+# No network/login required: keep SwanLab data locally for later synchronization.
+IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/local_run --swanlab_mode offline
+
+# CSV-only logging; SwanLab does not need to be installed.
+IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/csv_run --swanlab_mode disabled
+
+# Resume both model state and a previous SwanLab experiment (use its ID from the dashboard).
+IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/lafan1_main \
+  --resume logs/lafan1_main/last.pt --swanlab_run_id YOUR_TRAINING_EXPERIMENT_ID
+```
+
+Checkpoint resume alone creates a new SwanLab experiment. To continue an evaluator's experiment,
+pass its own `--swanlab_run_id`; do not reuse the training experiment ID for concurrent evaluation.
+The evaluation watcher only uploads newly evaluated checkpoints, not rows already in `eval.csv`.
 
 ## Result (LAFAN1, 40 clips, one RTX PRO 6000 Blackwell)
 

@@ -1,0 +1,102 @@
+# SuperMimic on Mondo aliyun H100 — stage 1: build the environment, fetch data, verify the stack.
+#
+# Why this job exists: the repository's environment is not a wheel on PyPI. It is Isaac Lab 3.0.0
+# (kit-less: no Isaac Sim, no Kit, no PhysX) at commit 46d6cc3, installed as a uv project
+# (torch 2.11.0 + CUDA 13, newton @ 71eeba1, warp-lang 1.17.0, mujoco 3.15), which the project's
+# Dockerfile.kitless builds with `uv sync --frozen --extra all --extra importers`. None of the
+# cluster images ship it, and it is ~10 GB, so it is built once on the NAS and shared by every
+# later run (tools/setup_uv.sh in the pinned code directory).
+#
+# Reuses the environment and assets; each smoke run keeps its own output directory.
+#
+# Submit (see jobs/README.md for the preconditions):
+#   md_ak submit /data/nas_ray/home/sia.luo/code/supermimic/a1508d4/jobs/supermimic_h100_smoke.yaml
+config_version: 1
+cluster: rx-brain.aliyun_sh_h100
+# The image only has to provide a CUDA driver-visible linux + compiler: the Isaac Lab stack is
+# installed from PyPI, not taken from the image, and `isaacsim` is deliberately absent (kit-less).
+# This is the image the other aliyun_sh_h100 jobs in this account use, so it is already pullable.
+image: ai-base:starvla-cuda12.8_devel-ubuntu22.04-v5
+num_gpus: 1
+experiment_name: "supermimic-smoke"
+shared_workspace: /data/nas_ray/home/sia.luo/code/supermimic/a1508d4
+log_folder: "logs"
+
+os_env_vars:
+  PYTHONUNBUFFERED: "1"
+  UV_LINK_MODE: "copy"
+  CONVERSION_MODE: "host"
+  # hf-mirror is the only working Hugging Face egress from this cluster.
+  HF_ENDPOINT: "https://hf-mirror.com"
+  UV_CACHE_DIR: "/data/nas_ray/home/sia.luo/.cache/uv"
+  # uv's `python-preference = "only-managed"` (Isaac Lab's pyproject) downloads CPython 3.12; keep
+  # it on the NAS so later jobs do not download it again.
+  UV_PYTHON_INSTALL_DIR: "/data/nas_ray/home/sia.luo/.cache/uv-python"
+  # Keep warp/torch.compile/inductor caches next to the code (the container run does the same via
+  # run_container.sh) so `torch.compile` is only paid once.
+  WARP_CACHE_PATH: "/data/nas_ray/home/sia.luo/code/supermimic/a1508d4/.cache/warp"
+  TORCHINDUCTOR_CACHE_DIR: "/data/nas_ray/home/sia.luo/code/supermimic/a1508d4/.cache/inductor"
+  MPLCONFIGDIR: "/tmp/mpl"
+  PYTHONDONTWRITEBYTECODE: "1"
+  TOKENIZERS_PARALLELISM: "false"
+
+tasks:
+  - name: "supermimic-smoke"
+    type: "shell"
+    streaming: true
+    cmd: |
+      set -euo pipefail
+      CODE=/data/nas_ray/home/sia.luo/code/supermimic/a1508d4
+      VENV=$CODE/IsaacLab/.venv
+      PY=$VENV/bin/python
+      cd "$CODE"
+      unset PYTHONPATH PYTHONHOME UV_PROJECT_ENVIRONMENT UV_PYTHON VIRTUAL_ENV
+
+      echo "=== 1. GPU / driver (torch 2.11 is the CUDA 13 build: needs driver >= 580) ==="
+      nvidia-smi --query-gpu=index,name,memory.total,driver_version,compute_cap --format=csv
+      nproc
+      df -h /data/nas_ray/home/sia.luo | tail -1
+
+      echo "=== 2. code provenance ==="
+      test "$(git -c safe.directory="$CODE" rev-parse HEAD)" = a1508d42c9d1699a52e8233ab16d08c488441ab9
+      test "$(git -c safe.directory="$CODE" hash-object local.patch)" = d02d89195ddaabc5998f56b358412b9c06a4ff3c
+
+      git apply --reverse --check local.patch
+
+      echo "=== 3. sync the locked environment ==="
+      export PATH="$HOME/.local/bin:$PATH"
+      if ! command -v uv >/dev/null; then
+        "$(command -v python3 || command -v python)" -m pip install --user --index-url https://pypi.org/simple "uv>=0.12"
+      fi
+      uv --version
+      bash tools/setup_uv.sh "$CODE/IsaacLab"
+      "$PY" - <<'PYCHECK'
+      import torch, mujoco, warp
+      import isaaclab, isaaclab_newton, newton
+      print("torch", torch.__version__, "mujoco", mujoco.__version__, "warp", warp.__version__)
+      assert torch.cuda.is_available()
+      print("device", torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))
+      PYCHECK
+
+      echo "=== 4. data (skipped if already present) ==="
+      if [ "$(ls data/lafan1_g1 2>/dev/null | wc -l)" -ne 40 ] || [ ! -f data/g1_usd/g1_29dof/g1_29dof.usda ]; then
+        PYTHON="$PY" bash tools/download_data.sh
+      else
+        echo "reusing data: $(ls data/lafan1_g1 | wc -l) clips"
+      fi
+      test "$(ls data/lafan1_g1 | wc -l)" -eq 40
+      test -f data/g1_description/g1_29dof.xml
+      test -f data/g1_usd/g1_29dof/g1_29dof.usda
+
+      echo "=== 5. FK vs simulator (expected agreement ~1e-6) ==="
+      "$PY" tools/test_env.py --num_envs 64 --headless
+
+      echo "=== 6. training smoke including policy updates after warm-up ==="
+      RUN=/data/nas_ray/home/sia.luo/experiments/supermimic/smoke-$(date -u +%Y%m%dT%H%M%SZ)
+      mkdir -p "$RUN"
+      "$PY" supermimic/train.py --log_dir "$RUN" --iterations 510 --ckpt_every 510 \
+        --log_every 10 --num_envs 4096 --headless
+      test -f "$RUN/ckpt_000510.pt"
+      mkdir -p "$CODE/.cache"
+      git hash-object local.patch > "$CODE/.cache/smoke-passed"
+      echo "SMOKE PASSED"

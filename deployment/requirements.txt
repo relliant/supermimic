@@ -1,0 +1,7 @@
+# Small Isaac-free exporter environment; no training/Isaac installation needed.
+numpy
+torch
+onnx
+mujoco
+# Optional at export time, recommended to verify CPU inference parity.
+onnxruntime

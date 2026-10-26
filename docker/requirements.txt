@@ -1,0 +1,2 @@
+# SuperMimic additions to the pinned Isaac Lab environment (host and Docker).
+swanlab

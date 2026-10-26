@@ -1,5 +1,6 @@
 # caches and build output
 .cache/
+.venv/
 __pycache__/
 *.pyc
 build_*.log
@@ -9,6 +10,7 @@ IsaacLab/
 data/
 # training runs: checkpoints, logs
 logs/
+swanlog/
 *.pt
 # rendered videos and recorded trajectories (derived from CC BY-NC-ND LAFAN1 motions)
 *.mp4

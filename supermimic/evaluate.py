@@ -20,6 +20,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from supermimic.tracking import add_swanlab_args, track_experiment
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--run_dir", type=str, required=True)
 parser.add_argument("--watch", action="store_true")
@@ -27,6 +29,7 @@ parser.add_argument("--ckpt", type=str, default=None, help="evaluate one checkpo
 parser.add_argument("--record", type=str, default=None, help="save trajectories (npz) for rendering")
 parser.add_argument("--motion_dir", type=str, default=os.path.join(REPO, "data", "lafan1_g1"))
 parser.add_argument("--every", type=int, default=1, help="evaluate every n-th checkpoint")
+add_swanlab_args(parser)
 add_launcher_args(parser)
 args = parser.parse_args()
 
@@ -96,12 +99,28 @@ def evaluate(env: TrackingSim, ck: dict, record: str | None = None) -> dict:
     return res
 
 
+def log_evaluation(tracking_run, result: dict, checkpoint: dict) -> None:
+    if tracking_run is None:
+        return
+    metrics = {
+        "eval/norm_return": result["norm_return"],
+        "eval/norm_return_framew": result["norm_return_framew"],
+        "eval/n_failed": result["n_failed"],
+        "eval/success_rate": 1 - result["n_failed"] / C,
+        "eval/train_wall_h": checkpoint["wall_time"] / 3600,
+        "eval/sim_steps": checkpoint["sim_steps"],
+    }
+    metrics.update({f"eval/per_clip/{name}": value for name, value in result["per_clip"].items()})
+    tracking_run.log(metrics, step=checkpoint["iteration"])
+
+
 sim_cfg = make_sim(dev, args)
-with launch_simulation(sim_cfg, args):
+with track_experiment(args, log_dir=args.run_dir, job_type="evaluation") as tracking_run, launch_simulation(sim_cfg, args):
     env = TrackingSim(sim_cfg, C, motion, mdp, eval_mode=True)
     if args.ckpt:
         ck = torch.load(args.ckpt, map_location=dev)
         res = evaluate(env, ck, args.record)
+        log_evaluation(tracking_run, res, ck)
         print(json.dumps({k: v for k, v in res.items() if k != "per_clip"}, indent=1))
         sys.exit(0)
     out_csv = os.path.join(args.run_dir, "eval.csv")
@@ -122,6 +141,7 @@ with launch_simulation(sim_cfg, args):
             line = f"{it},{ck['wall_time'] / 3600:.4f},{ck['saved_at']},{time.strftime('%Y-%m-%d %H:%M:%S')},{res['norm_return']:.4f},{res['norm_return_framew']:.4f},{res['n_failed']},{'|'.join(res['failed'])}\n"
             open(out_csv, "a").write(line)
             json.dump(res, open(c.replace(".pt", "_eval.json"), "w"), indent=1)
+            log_evaluation(tracking_run, res, ck)
             print(f"[eval] it {it} ({ck['wall_time'] / 3600:.2f} h): norm return {res['norm_return']:.4f}, failed {res['n_failed']}/{C} ({time.time() - t0:.0f}s)", flush=True)
             done.add(it)
         if not args.watch:

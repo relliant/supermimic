@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "hardware_validated": false,
+  "pelvis_imu_verified": false,
+  "safe_exit_verified": false,
+  "imu_frame": "pelvis",
+  "sensor_to_pelvis_wxyz": [1.0, 0.0, 0.0, 0.0],
+  "state_timeout_ms": 100.0,
+  "command_timeout_ms": 100.0,
+  "inference_timeout_ms": 20.0,
+  "maximum_temperature": 70.0,
+  "maximum_tilt_error": 0.6,
+  "preparation_seconds": 5.0,
+  "shutdown_seconds": 0.2,
+  "maximum_start_joint_speed": 0.2,
+  "maximum_reference_start_speed": 0.2,
+  "maximum_start_position_error": 0.1
+}

@@ -14,6 +14,8 @@ sys.path.insert(0, REPO)
 
 from isaaclab.app import add_launcher_args, launch_simulation
 
+from supermimic.tracking import add_swanlab_args, track_experiment
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--num_envs", type=int, default=4096)
 parser.add_argument("--iterations", type=int, default=320_000)
@@ -43,6 +45,7 @@ parser.add_argument("--log_dir", type=str, default=os.path.join(REPO, "logs", "r
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--resume", type=str, default=None)
 parser.add_argument("--amp", type=str, default="bf16", choices=["none", "bf16"], help="autocast dtype for MLP matmuls")
+add_swanlab_args(parser)
 add_launcher_args(parser)
 args = parser.parse_args()
 
@@ -258,7 +261,7 @@ def policy_update():
 
 # ------------------------------------------------------------------------------------------------
 sim_cfg = make_sim(dev, args)
-with launch_simulation(sim_cfg, args):
+with track_experiment(args, log_dir=args.log_dir, job_type="training") as tracking_run, launch_simulation(sim_cfg, args):
     env = TrackingSim(sim_cfg, args.num_envs, motion, mdp, gamma=args.gamma)
     buffer = ReplayBuffer(args.buffer_steps, args.num_envs, dev)
     obs_hist = torch.zeros(args.num_envs, Hh, OBS_DIM, device=dev)
@@ -292,9 +295,11 @@ with launch_simulation(sim_cfg, args):
     stats = {"r": [], "ep_len": [], "ep_ret": [], "term": [], "done": []}
     if start_it == 0:
         collect(args.warmup_steps, stats)
+    log_columns = ("iteration", "wall_h", "sim_steps", "wm_loss", "wm_err8", "pi_loss", "v_loss", "imag_rew",
+                   "pi_gradnorm", "imag_survival", "sim_rew", "ep_len", "ep_ret_norm", "term_frac", "it_per_s", "lr")
     log_f = open(os.path.join(args.log_dir, "train_log.csv"), "a")
     if start_it == 0:
-        log_f.write("iteration,wall_h,sim_steps,wm_loss,wm_err8,pi_loss,v_loss,imag_rew,pi_gradnorm,imag_survival,sim_rew,ep_len,ep_ret_norm,term_frac,it_per_s,lr\n")
+        log_f.write(",".join(log_columns) + "\n")
     t_start = time.time() - wall_offset
     t_log = time.time()
     step_acc = 0.0
@@ -334,6 +339,8 @@ with launch_simulation(sim_cfg, args):
                    mean(agg["gn"]), mean(agg["surv"]), mean(stats["r"]), mean(stats["ep_len"]), mean(stats["ep_ret"]), term_frac, ips, lr]  # fmt: skip
             log_f.write(",".join(f"{x:.6g}" if isinstance(x, float) else str(x) for x in row) + "\n")
             log_f.flush()
+            if tracking_run is not None:
+                tracking_run.log({f"train/{name}": value for name, value in zip(log_columns, row)}, step=it + 1)
             print(f"it {it + 1} | {wall_h:.3f} h | wm {row[3]:.4f} e8 {row[4]:.4f} | pi {row[5]:.3f} v {row[6]:.4f} imag_r {row[7]:.3f} surv {row[9]:.3f} "
                   f"| sim_r {row[10]:.3f} ep_len {row[11]:.1f} ep_ret {row[12]:.3f} term {term_frac:.2f} | {ips:.2f} it/s", flush=True)  # fmt: skip
             stats = {k: [] for k in stats}
