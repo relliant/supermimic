@@ -4,26 +4,24 @@
 # target (evaluation normalized return 0.82) at iteration 12000 / 1.24 h and 40/40 clips at 14000 /
 # 1.47 h, so 20000 iterations leaves margin and takes roughly 2 h on one GPU.
 #
-# Requires jobs/supermimic_h100_smoke.yaml to have run: it builds the venv in
-# $CODE/IsaacLab/.venv and the LAFAN1 + G1 assets in $CODE/data. This job only trains and evaluates.
+# Requires jobs/supermimic_h100_smoke.yaml to have run using the prepared $CODE/.venv
+# and the LAFAN1 + G1 assets in $CODE/data. This job only trains and evaluates.
 #
 # Submit:
-#   md_ak submit /data/nas_ray/home/sia.luo/code/supermimic/a1508d4/jobs/supermimic_h100_train.yaml
+#   md_ak submit /data/nas_ray/home/sia.luo/supermimic/jobs/supermimic_h100_train.yaml
 config_version: 1
 cluster: rx-brain.aliyun_sh_h100
 image: ai-base:starvla-cuda12.8_devel-ubuntu22.04-v5
 num_gpus: 1
 experiment_name: "supermimic-lafan1"
-shared_workspace: /data/nas_ray/home/sia.luo/code/supermimic/a1508d4
+shared_workspace: /data/nas_ray/home/sia.luo/supermimic
 log_folder: "logs"
 
 os_env_vars:
   PYTHONUNBUFFERED: "1"
   HF_ENDPOINT: "https://hf-mirror.com"
-  UV_CACHE_DIR: "/data/nas_ray/home/sia.luo/.cache/uv"
-  UV_PYTHON_INSTALL_DIR: "/data/nas_ray/home/sia.luo/.cache/uv-python"
-  WARP_CACHE_PATH: "/data/nas_ray/home/sia.luo/code/supermimic/a1508d4/.cache/warp"
-  TORCHINDUCTOR_CACHE_DIR: "/data/nas_ray/home/sia.luo/code/supermimic/a1508d4/.cache/inductor"
+  WARP_CACHE_PATH: "/data/nas_ray/home/sia.luo/supermimic/.cache/warp"
+  TORCHINDUCTOR_CACHE_DIR: "/data/nas_ray/home/sia.luo/supermimic/.cache/inductor"
   MPLCONFIGDIR: "/tmp/mpl"
   PYTHONDONTWRITEBYTECODE: "1"
 
@@ -33,14 +31,14 @@ tasks:
     streaming: true
     cmd: |
       set -euo pipefail
-      CODE=/data/nas_ray/home/sia.luo/code/supermimic/a1508d4
-      PY=$CODE/IsaacLab/.venv/bin/python
+      CODE=/data/nas_ray/home/sia.luo/supermimic
+      PY=$CODE/.venv/bin/python
       RUN=/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main
       cd "$CODE"
       unset PYTHONPATH PYTHONHOME
 
-      test "$(git -c safe.directory="$CODE" rev-parse HEAD)" = a1508d42c9d1699a52e8233ab16d08c488441ab9
-      test "$(git -c safe.directory="$CODE" hash-object local.patch)" = d02d89195ddaabc5998f56b358412b9c06a4ff3c
+      test "$(git -c safe.directory="$CODE" rev-parse HEAD)" = 264db00276b29d22ac2dd9ee161c148561740e4a
+      test "$(git -c safe.directory="$CODE" hash-object local.patch)" = 1e88207760ebb3eee0fb9d5729f27bb8eb701e59
       git apply --reverse --check local.patch
       test "$(< "$CODE/.cache/smoke-passed")" = "$(git hash-object local.patch)"
       test -x "$PY" || { echo "no venv: run jobs/supermimic_h100_smoke.yaml first" >&2; exit 1; }
@@ -50,21 +48,21 @@ tasks:
       test ! -e "$RUN/train_log.csv" || { echo "Existing run: choose a new output directory or explicitly resume" >&2; exit 1; }
       mkdir -p "$RUN"
       "$PY" supermimic/train.py --log_dir "$RUN" --iterations 20000 --ckpt_every 2000 \
-        --log_every 50 --num_envs 4096 --headless 2>&1 | tee -a "$RUN/stdout.log"
+        --log_every 50 --num_envs 4096 --swanlab_mode offline 2>&1 | tee -a "$RUN/stdout.log"
 
   - name: "supermimic-eval"
     type: "shell"
     streaming: true
     cmd: |
       set -euo pipefail
-      CODE=/data/nas_ray/home/sia.luo/code/supermimic/a1508d4
-      PY=$CODE/IsaacLab/.venv/bin/python
+      CODE=/data/nas_ray/home/sia.luo/supermimic
+      PY=$CODE/.venv/bin/python
       RUN=/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main
       cd "$CODE"
       unset PYTHONPATH PYTHONHOME
 
       # No --watch: evaluates every checkpoint that has no row in eval.csv yet, then exits.
-      "$PY" supermimic/evaluate.py --run_dir "$RUN" --every 1 --headless
+      "$PY" supermimic/evaluate.py --run_dir "$RUN" --every 1 --swanlab_mode offline
       cat "$RUN/eval.csv"
       "$PY" tools/plot.py "$RUN" --out "$RUN/success_curve.png" || true
       # Report learning quality separately from whether the training process completed.

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "hardware_validated": false,
-  "pelvis_imu_verified": false,
+  "imu_convention_verified": false,
   "safe_exit_verified": false,
   "imu_frame": "pelvis",
   "sensor_to_pelvis_wxyz": [1.0, 0.0, 0.0, 0.0],

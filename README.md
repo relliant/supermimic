@@ -92,13 +92,17 @@ identical environment can be built without Docker (needs a working NVIDIA driver
 ~10 GB of disk):
 
 ```bash
-tools/setup_uv.sh                                  # clone + checkout 46d6cc3, uv sync -> IsaacLab/.venv
-IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/lafan1_main
+tools/setup_uv.sh                                  # clone + checkout 46d6cc3, uv sync -> .venv
+.venv/bin/python supermimic/train.py --log_dir logs/lafan1_main
 ```
 
-Run commands from the repository root: the code is used in place, not installed. MuJoCo, pillow
-and matplotlib are already in the Isaac Lab lock. Both `tools/setup_uv.sh` and the SuperMimic
-Dockerfile additionally install SwanLab from `docker/requirements.txt` for experiment logging.
+`tools/setup_uv.sh` keeps Isaac Lab as the project that owns the lock (that is what makes
+`--frozen` reproduce the image exactly) and only redirects the environment's location to
+`<repo>/.venv` with `UV_PROJECT_ENVIRONMENT`. Run commands from the repository root: the code is
+used in place, not installed. MuJoCo, pillow and matplotlib are already in the Isaac Lab lock. Both
+`tools/setup_uv.sh` and the SuperMimic Dockerfile additionally install SwanLab from
+`docker/requirements.txt` for experiment logging; a `uv sync --frozen` in `IsaacLab/` uninstalls it
+again, so re-run `tools/setup_uv.sh` after syncing rather than syncing by hand.
 For `tools/render.py`, install
 `libegl1 libgl1 libopengl0` and `ffmpeg`; to keep the build caches next to the repository like
 `run_container.sh` does:
@@ -107,17 +111,17 @@ For `tools/render.py`, install
 export WARP_CACHE_PATH=$PWD/.cache/warp TORCHINDUCTOR_CACHE_DIR=$PWD/.cache/inductor MPLCONFIGDIR=/tmp/mpl
 ```
 
-`pyproject.toml` at the repository root is a **separate, Isaac-free** environment for the analysis
-tools that do not import `isaaclab` (`tools/plot.py`, `tools/render.py`,
-`tools/analyze_failure.py`, `tools/urdf_to_mjcf.py`, `supermimic/kinematics.py`):
+`.venv` is the only Python environment in the repository. The analysis tools that do not import
+`isaaclab` (`tools/plot.py`, `tools/render.py`, `tools/analyze_failure.py`,
+`tools/urdf_to_mjcf.py`, `supermimic/kinematics.py`) run in it as well, because the Isaac Lab lock
+already pins matplotlib, pillow and mujoco:
 
 ```bash
-uv sync                                            # -> .venv (torch 2.11, mujoco 3.15, numpy, matplotlib, pillow)
-uv run python tools/plot.py logs/lafan1_main --out results/success_curve.png
+.venv/bin/python tools/plot.py logs/lafan1_main --out results/success_curve.png
 ```
 
-Training, evaluation, the environment tests and `tools/bench.py` import `isaaclab` (directly or via
-`supermimic.robot`) and therefore need the full environment, not this one.
+Do not run a bare `uv sync` at the repository root: the root deliberately has no `pyproject.toml`,
+so `.venv` is owned by `tools/setup_uv.sh` and a stray sync cannot replace the Isaac Lab stack.
 
 ### 2. Data: LAFAN1 motions and the G1 model
 
@@ -185,9 +189,9 @@ For an existing host environment, install the new dependency and log in once wit
 account that has write access to `relliant`:
 
 ```bash
-uv pip install --python IsaacLab/.venv/bin/python -r docker/requirements.txt
-IsaacLab/.venv/bin/swanlab login
-IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/lafan1_main
+uv pip install --python .venv/bin/python -r docker/requirements.txt
+.venv/bin/swanlab login
+.venv/bin/python supermimic/train.py --log_dir logs/lafan1_main
 ```
 
 For Docker, rebuild the SuperMimic image and recreate the container before using it (a running
@@ -206,13 +210,13 @@ Both entry points accept `--swanlab_workspace`, `--swanlab_project`, `--swanlab_
 
 ```bash
 # No network/login required: keep SwanLab data locally for later synchronization.
-IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/local_run --swanlab_mode offline
+.venv/bin/python supermimic/train.py --log_dir logs/local_run --swanlab_mode offline
 
 # CSV-only logging; SwanLab does not need to be installed.
-IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/csv_run --swanlab_mode disabled
+.venv/bin/python supermimic/train.py --log_dir logs/csv_run --swanlab_mode disabled
 
 # Resume both model state and a previous SwanLab experiment (use its ID from the dashboard).
-IsaacLab/.venv/bin/python supermimic/train.py --log_dir logs/lafan1_main \
+.venv/bin/python supermimic/train.py --log_dir logs/lafan1_main \
   --resume logs/lafan1_main/last.pt --swanlab_run_id YOUR_TRAINING_EXPERIMENT_ID
 ```
 

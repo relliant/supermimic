@@ -166,6 +166,10 @@ public:
     int run() {
         std::cout << "MODE " << options_.mode << " interface=" << options_.interface
                   << " domain=" << options_.domain << std::endl;
+        if (profile_) {
+            std::cout << "IMU source=rt/lowstate.imu_state convention=" << profile_->imu_frame
+                      << " waist_compensation=none" << std::endl;
+        }
         if (options_.mode == "monitor") return monitor();
 
         SensorSnapshot initial = waitForState();
@@ -266,6 +270,8 @@ private:
             incoming.motor_fault = incoming.motor_fault || motor.motorstate() != 0;
         }
         if (profile_) {
+            // In torso_as_pelvis mode the same fixed axis calibration applies, but no
+            // articulated waist transform is performed: the measurement IS the policy base.
             const auto& calibration = profile_->sensor_to_pelvis_wxyz;
             const Eigen::Quaternionf pelvis_from_sensor(calibration[0], calibration[1], calibration[2], calibration[3]);
             const auto& measured = incoming.state.root_quaternion_wxyz;

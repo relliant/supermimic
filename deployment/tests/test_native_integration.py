@@ -152,8 +152,8 @@ def synthetic_fixture(synthetic_directory):
         profile = {
             "schema_version": 1, "hardware_validated": False,
             "manifest_sha256": hashlib.sha256((bundle / "manifest.json").read_bytes()).hexdigest(),
-            "pelvis_imu_verified": False, "safe_exit_verified": False,
-            "imu_frame": "pelvis", "sensor_to_pelvis_wxyz": [1, 0, 0, 0],
+            "imu_convention_verified": False, "safe_exit_verified": False,
+            "imu_frame": "torso_as_pelvis", "sensor_to_pelvis_wxyz": [1, 0, 0, 0],
             "position_lower": manifest["joint_lower"], "position_upper": manifest["joint_upper"],
             "velocity_limit": manifest["velocity_limit"], "torque_limit": manifest["effort_limit"],
             "kp": manifest["kp"], "kd": manifest["kd"],
@@ -274,6 +274,7 @@ def test_native_simulation_runs_zero_action_policy(synthetic_fixture, tmp_path):
     # Deadline faults on shared hosts are real failures, not retries or skips.
     assert return_code == 0, output
     assert "TRACKING" in output and "STOPPED completed" in output, output
+    assert "convention=torso_as_pelvis waist_compensation=none" in output, output
     assert metrics["accepted_commands"] > 0 and metrics["physics_steps"] > 0, metrics
     assert metrics["maximum_applied_torque"] <= max(synthetic_fixture.manifest["effort_limit"])
 
@@ -331,5 +332,5 @@ def test_native_unvalidated_hardware_profile_refused_before_dds(synthetic_fixtur
             pytest.fail(f"unvalidated hardware preflight did not refuse promptly:\n{log_path.read_text()}")
     output = log_path.read_text()
     assert return_code != 0, output
-    assert "Hardware requires a reviewed profile, verified pelvis IMU and verified safe exit" in output, output
+    assert "Hardware requires a reviewed profile, verified IMU convention and verified safe exit" in output, output
     assert "MODE " not in output, output

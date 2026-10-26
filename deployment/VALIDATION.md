@@ -83,8 +83,10 @@ loss-of-command behavior; software process exit is not a safe handoff by itself.
 - Review reference initial velocities and pose transitions; test all fault/exit
   paths. Disabled self-collision in the original simulator remains a known risk.
 - Verify onboard x86_64 ABI/versions and full-loop latency under expected load.
-- Verify IMU mounting/firmware conventions; current hardware adapter requires a
-  calibrated rigid pelvis IMU and refuses articulated torso-IMU profiles.
+- Verify IMU source/firmware and axis conventions. The adapter supports both
+  `pelvis` and explicit `torso_as_pelvis` interpretation, using LowState IMU
+  orientation/gyro directly as the policy base without articulated waist
+  compensation. Physical pelvis mounting is not a deployment prerequisite.
 - Review physical zeroes, motor order, gains, limits, payload, control ownership,
   bounded damping and real loss-of-command behavior with protection equipment,
   a trained operator and independent emergency stop.
@@ -104,3 +106,15 @@ export inputs/bundle were removed after recording the results. Integration
 fixtures use temporary directories and reap subprocesses on every exit path.
 No remote/NAS artifacts were created or cleaned in this deployment task; active
 training and the user's parallel SwanLab changes were left untouched.
+
+## Direct torso-as-base convention update
+
+Following the user's G1 deployment convention, hardware templates now default
+to `torso_as_pelvis`. There is no articulated waist compensation and no physical
+pelvis-mount requirement. `imu_convention_verified` replaces the mount-specific
+review flag; existing `pelvis` profiles retain compatibility with the old flag.
+New C++ regression cases cover both conventions, legacy handling, unverified
+flags, invalid frame names and invalid calibration. Native build and CTest
+passed (2/2); the serial loopback suite also passed (6/6 in 29.31 s) using the
+explicit torso-as-base profile. This verifies the configured data path and
+watchdogs, not physical torso/pelvis equivalence or learned-policy performance.

@@ -17,8 +17,9 @@ using JointArray = std::array<float, kJointCount>;
 
 struct SafetyProfile {
     bool hardware_validated = false;
-    bool pelvis_imu_verified = false;
+    bool imu_convention_verified = false;
     bool safe_exit_verified = false;
+    std::string imu_frame = "pelvis";
     JointArray position_lower{}, position_upper{}, velocity_limit{}, torque_limit{};
     JointArray target_rate_limit{}, kp{}, kd{}, damping_kd{};
     std::array<float, 4> sensor_to_pelvis_wxyz{1, 0, 0, 0};
@@ -33,6 +34,28 @@ struct SafetyProfile {
     double maximum_reference_start_speed = 0.2;
     double maximum_start_position_error = 0.1;
 
+    void loadImuConvention(const nlohmann::json& configuration) {
+        // The torso convention deliberately uses the measured orientation and gyro as
+        // the policy base state; it does not reconstruct pelvis motion through the waist.
+        imu_frame = configuration.at("imu_frame").get<std::string>();
+        if (imu_frame != "pelvis" && imu_frame != "torso_as_pelvis")
+            throw std::runtime_error("imu_frame must be pelvis or torso_as_pelvis");
+        if (configuration.contains("imu_convention_verified"))
+            imu_convention_verified = configuration.at("imu_convention_verified").get<bool>();
+        else if (imu_frame == "pelvis")
+            imu_convention_verified = configuration.at("pelvis_imu_verified").get<bool>();
+        else
+            throw std::runtime_error("torso_as_pelvis requires an explicit imu_convention_verified flag");
+        const auto& calibration = configuration.at("sensor_to_pelvis_wxyz");
+        if (!calibration.is_array() || calibration.size() != 4)
+            throw std::runtime_error("IMU calibration requires exactly four wxyz values");
+        sensor_to_pelvis_wxyz = calibration.get<std::array<float, 4>>();
+        double quaternion_norm = 0;
+        for (float value : sensor_to_pelvis_wxyz) quaternion_norm += value * value;
+        if (!std::isfinite(quaternion_norm) || std::abs(quaternion_norm - 1) > 1e-4)
+            throw std::runtime_error("IMU calibration quaternion must be normalized");
+    }
+
     static SafetyProfile load(const std::string& filename, const Bundle& bundle, bool hardware) {
         std::ifstream input(filename);
         if (!input) throw std::runtime_error("Cannot open safety profile: " + filename);
@@ -44,18 +67,8 @@ struct SafetyProfile {
             throw std::runtime_error("Hardware profile does not match this exact model/reference manifest");
         SafetyProfile profile;
         profile.hardware_validated = configuration.at("hardware_validated").get<bool>();
-        profile.pelvis_imu_verified = configuration.at("pelvis_imu_verified").get<bool>();
         profile.safe_exit_verified = configuration.at("safe_exit_verified").get<bool>();
-        if (configuration.at("imu_frame").get<std::string>() != "pelvis")
-            throw std::runtime_error("Only a verified, rigid pelvis IMU is supported; torso IMU needs articulated compensation");
-        const auto& calibration = configuration.at("sensor_to_pelvis_wxyz");
-        if (!calibration.is_array() || calibration.size() != 4)
-            throw std::runtime_error("IMU calibration requires exactly four wxyz values");
-        profile.sensor_to_pelvis_wxyz = calibration.get<std::array<float, 4>>();
-        double quaternion_norm = 0;
-        for (float value : profile.sensor_to_pelvis_wxyz) quaternion_norm += value * value;
-        if (!std::isfinite(quaternion_norm) || std::abs(quaternion_norm - 1) > 1e-4)
-            throw std::runtime_error("IMU calibration quaternion must be normalized");
+        profile.loadImuConvention(configuration);
 
         auto read_joint_array = [&](const char* key, const JointArray& baseline) {
             JointArray result = baseline;
@@ -113,8 +126,8 @@ struct SafetyProfile {
                 profile.damping_kd[joint] <= 0)
                 throw std::runtime_error("Invalid or out-of-model joint safety limits at index " + std::to_string(joint));
         }
-        if (hardware && (!profile.hardware_validated || !profile.pelvis_imu_verified || !profile.safe_exit_verified))
-            throw std::runtime_error("Hardware requires a reviewed profile, verified pelvis IMU and verified safe exit");
+        if (hardware && (!profile.hardware_validated || !profile.imu_convention_verified || !profile.safe_exit_verified))
+            throw std::runtime_error("Hardware requires a reviewed profile, verified IMU convention and verified safe exit");
         return profile;
     }
 };

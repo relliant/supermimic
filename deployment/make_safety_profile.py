@@ -18,10 +18,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--imu-frame", choices=("pelvis", "torso_as_pelvis"), default="torso_as_pelvis",
+        help="IMU interpretation; torso_as_pelvis directly uses torso measurements as policy base state",
+    )
     arguments = parser.parse_args()
     manifest = verify_bundle(arguments.bundle)
     profile = json.loads((Path(__file__).parent / "config/simulation.json").read_text())
     profile.update({
+        "imu_frame": arguments.imu_frame,
         "review_status": "UNVALIDATED TEMPLATE; model limits are not hardware-approved limits",
         "manifest_sha256": sha256_file(arguments.bundle / "manifest.json"),
         "position_lower": manifest["joint_lower"],

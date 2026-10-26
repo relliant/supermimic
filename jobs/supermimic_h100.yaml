@@ -4,17 +4,14 @@ cluster: rx-brain.aliyun_sh_h100
 image: ai-base:starvla-cuda12.8_devel-ubuntu22.04-v5
 num_gpus: 1
 experiment_name: supermimic-lafan1
-shared_workspace: /data/nas_ray/home/sia.luo/code/supermimic/a1508d4
+shared_workspace: /data/nas_ray/home/sia.luo/supermimic
 log_folder: logs
 os_env_vars:
   PYTHONUNBUFFERED: '1'
-  UV_LINK_MODE: copy
   CONVERSION_MODE: host
   HF_ENDPOINT: https://hf-mirror.com
-  UV_CACHE_DIR: /data/nas_ray/home/sia.luo/.cache/uv
-  UV_PYTHON_INSTALL_DIR: /data/nas_ray/home/sia.luo/.cache/uv-python
-  WARP_CACHE_PATH: /data/nas_ray/home/sia.luo/code/supermimic/a1508d4/.cache/warp
-  TORCHINDUCTOR_CACHE_DIR: /data/nas_ray/home/sia.luo/code/supermimic/a1508d4/.cache/inductor
+  WARP_CACHE_PATH: /data/nas_ray/home/sia.luo/supermimic/.cache/warp
+  TORCHINDUCTOR_CACHE_DIR: /data/nas_ray/home/sia.luo/supermimic/.cache/inductor
   MPLCONFIGDIR: /tmp/mpl
   PYTHONDONTWRITEBYTECODE: '1'
   TOKENIZERS_PARALLELISM: 'false'
@@ -22,49 +19,51 @@ tasks:
 - name: supermimic-smoke
   type: shell
   streaming: true
-  cmd: "set -euo pipefail\nCODE=/data/nas_ray/home/sia.luo/code/supermimic/a1508d4\nVENV=$CODE/IsaacLab/.venv\n\
-    PY=$VENV/bin/python\ncd \"$CODE\"\nunset PYTHONPATH PYTHONHOME UV_PROJECT_ENVIRONMENT UV_PYTHON VIRTUAL_ENV\n\
-    \necho \"=== 1. GPU / driver (torch 2.11 is the CUDA 13 build: needs driver >= 580) ===\"\nnvidia-smi --query-gpu=index,name,memory.total,driver_version,compute_cap\
-    \ --format=csv\nnproc\ndf -h /data/nas_ray/home/sia.luo | tail -1\n\necho \"=== 2. code provenance ===\"\ntest\
-    \ \"$(git -c safe.directory=\"$CODE\" rev-parse HEAD)\" = a1508d42c9d1699a52e8233ab16d08c488441ab9\ntest \"\
-    $(git -c safe.directory=\"$CODE\" hash-object local.patch)\" = d02d89195ddaabc5998f56b358412b9c06a4ff3c\n\n\
-    git apply --reverse --check local.patch\n\necho \"=== 3. sync the locked environment ===\"\nexport PATH=\"$HOME/.local/bin:$PATH\"\
-    \nif ! command -v uv >/dev/null; then\n  \"$(command -v python3 || command -v python)\" -m pip install --user\
-    \ --index-url https://pypi.org/simple \"uv>=0.12\"\nfi\nuv --version\nbash tools/setup_uv.sh \"$CODE/IsaacLab\"\
-    \n\"$PY\" - <<'PYCHECK'\nimport torch, mujoco, warp\nimport isaaclab, isaaclab_newton, newton\nprint(\"torch\"\
-    , torch.__version__, \"mujoco\", mujoco.__version__, \"warp\", warp.__version__)\nassert torch.cuda.is_available()\n\
-    print(\"device\", torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))\nPYCHECK\n\necho \"===\
-    \ 4. data (skipped if already present) ===\"\nif [ \"$(ls data/lafan1_g1 2>/dev/null | wc -l)\" -ne 40 ] ||\
-    \ [ ! -f data/g1_usd/g1_29dof/g1_29dof.usda ]; then\n  PYTHON=\"$PY\" bash tools/download_data.sh\nelse\n  echo\
-    \ \"reusing data: $(ls data/lafan1_g1 | wc -l) clips\"\nfi\ntest \"$(ls data/lafan1_g1 | wc -l)\" -eq 40\ntest\
-    \ -f data/g1_description/g1_29dof.xml\ntest -f data/g1_usd/g1_29dof/g1_29dof.usda\n\necho \"=== 5. FK vs simulator\
-    \ (expected agreement ~1e-6) ===\"\n\"$PY\" tools/test_env.py --num_envs 64 --headless\n\necho \"=== 6. training\
-    \ smoke including policy updates after warm-up ===\"\nRUN=/data/nas_ray/home/sia.luo/experiments/supermimic/smoke-$(date\
-    \ -u +%Y%m%dT%H%M%SZ)\nmkdir -p \"$RUN\"\n\"$PY\" supermimic/train.py --log_dir \"$RUN\" --iterations 510 --ckpt_every\
-    \ 510 \\\n  --log_every 10 --num_envs 4096 --headless\ntest -f \"$RUN/ckpt_000510.pt\"\nmkdir -p \"$CODE/.cache\"\
-    \ngit hash-object local.patch > \"$CODE/.cache/smoke-passed\"\necho \"SMOKE PASSED\"\n"
+  cmd: "set -euo pipefail\nCODE=/data/nas_ray/home/sia.luo/supermimic\nVENV=$CODE/.venv\nPY=$VENV/bin/python\n\
+    cd \"$CODE\"\nunset PYTHONPATH PYTHONHOME UV_PROJECT_ENVIRONMENT UV_PYTHON VIRTUAL_ENV\n\necho \"\
+    === 1. GPU / driver (torch 2.11 is the CUDA 13 build: needs driver >= 580) ===\"\nnvidia-smi --query-gpu=index,name,memory.total,driver_version,compute_cap\
+    \ --format=csv\nnproc\ndf -h /data/nas_ray/home/sia.luo | tail -1\n\necho \"=== 2. code provenance\
+    \ ===\"\ntest \"$(git -c safe.directory=\"$CODE\" rev-parse HEAD)\" = 264db00276b29d22ac2dd9ee161c148561740e4a\n\
+    test \"$(git -c safe.directory=\"$CODE\" hash-object local.patch)\" = 1e88207760ebb3eee0fb9d5729f27bb8eb701e59\n\
+    \ngit apply --reverse --check local.patch\n\necho \"=== 3. reuse the prepared environment (no uv sync)\
+    \ ===\"\ntest -x \"$PY\" || { echo \"Run tools/setup_uv.sh manually before submitting\" >&2; exit\
+    \ 1; }\n\"$PY\" - <<'PYCHECK'\nimport torch, mujoco, warp\nimport isaaclab, isaaclab_newton, newton,\
+    \ swanlab\nprint(\"torch\", torch.__version__, \"mujoco\", mujoco.__version__, \"warp\", warp.__version__)\n\
+    assert torch.cuda.is_available()\nprint(\"device\", torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))\n\
+    PYCHECK\n\necho \"=== 4. data (skipped if already present) ===\"\nCLIP_COUNT=$(\"$PY\" -c 'from pathlib\
+    \ import Path; print(len(list(Path(\"data/lafan1_g1\").glob(\"*.csv\"))))')\nif [ \"$CLIP_COUNT\"\
+    \ -ne 40 ] || [ ! -f data/g1_usd/g1_29dof/g1_29dof.usda ]; then\n  PYTHON=\"$PY\" bash tools/download_data.sh\n\
+    else\n  echo \"reusing data: $(ls data/lafan1_g1 | wc -l) clips\"\nfi\ntest \"$(ls data/lafan1_g1\
+    \ | wc -l)\" -eq 40\ntest -f data/g1_description/g1_29dof.xml\ntest -f data/g1_usd/g1_29dof/g1_29dof.usda\n\
+    \necho \"=== 5. FK vs simulator (expected agreement ~1e-6) ===\"\n\"$PY\" tools/test_env.py --num_envs\
+    \ 64\n\necho \"=== 6. training smoke including policy updates after warm-up ===\"\nRUN=/data/nas_ray/home/sia.luo/experiments/supermimic/smoke-$(date\
+    \ -u +%Y%m%dT%H%M%SZ)\nmkdir -p \"$RUN\"\n\"$PY\" supermimic/train.py --log_dir \"$RUN\" --iterations\
+    \ 510 --ckpt_every 510 \\\n  --log_every 10 --num_envs 4096 --swanlab_mode offline\ntest -f \"$RUN/ckpt_000510.pt\"\
+    \nmkdir -p \"$CODE/.cache\"\ngit hash-object local.patch > \"$CODE/.cache/smoke-passed\"\necho \"\
+    SMOKE PASSED\"\n"
 - name: supermimic-train
   type: shell
   streaming: true
-  cmd: "set -euo pipefail\nCODE=/data/nas_ray/home/sia.luo/code/supermimic/a1508d4\nPY=$CODE/IsaacLab/.venv/bin/python\n\
-    RUN=/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main\ncd \"$CODE\"\nunset PYTHONPATH PYTHONHOME\n\
-    \ntest \"$(git -c safe.directory=\"$CODE\" rev-parse HEAD)\" = a1508d42c9d1699a52e8233ab16d08c488441ab9\ntest\
-    \ \"$(git -c safe.directory=\"$CODE\" hash-object local.patch)\" = d02d89195ddaabc5998f56b358412b9c06a4ff3c\n\
-    git apply --reverse --check local.patch\ntest \"$(< \"$CODE/.cache/smoke-passed\")\" = \"$(git hash-object local.patch)\"\
-    \ntest -x \"$PY\" || { echo \"no venv: run jobs/supermimic_h100_smoke.yaml first\" >&2; exit 1; }\ntest \"$(ls\
-    \ data/lafan1_g1 | wc -l)\" -eq 40 || { echo \"no LAFAN1 data: run the smoke job first\" >&2; exit 1; }\n\n\
-    nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv\ntest ! -e \"$RUN/train_log.csv\" || {\
-    \ echo \"Existing run: choose a new output directory or explicitly resume\" >&2; exit 1; }\nmkdir -p \"$RUN\"\
-    \n\"$PY\" supermimic/train.py --log_dir \"$RUN\" --iterations 20000 --ckpt_every 2000 \\\n  --log_every 50 --num_envs\
-    \ 4096 --headless 2>&1 | tee -a \"$RUN/stdout.log\"\n"
+  cmd: "set -euo pipefail\nCODE=/data/nas_ray/home/sia.luo/supermimic\nPY=$CODE/.venv/bin/python\nRUN=/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main\n\
+    cd \"$CODE\"\nunset PYTHONPATH PYTHONHOME\n\ntest \"$(git -c safe.directory=\"$CODE\" rev-parse HEAD)\"\
+    \ = 264db00276b29d22ac2dd9ee161c148561740e4a\ntest \"$(git -c safe.directory=\"$CODE\" hash-object\
+    \ local.patch)\" = 1e88207760ebb3eee0fb9d5729f27bb8eb701e59\ngit apply --reverse --check local.patch\n\
+    test \"$(< \"$CODE/.cache/smoke-passed\")\" = \"$(git hash-object local.patch)\"\ntest -x \"$PY\"\
+    \ || { echo \"no venv: run jobs/supermimic_h100_smoke.yaml first\" >&2; exit 1; }\ntest \"$(ls data/lafan1_g1\
+    \ | wc -l)\" -eq 40 || { echo \"no LAFAN1 data: run the smoke job first\" >&2; exit 1; }\n\nnvidia-smi\
+    \ --query-gpu=name,memory.total,driver_version --format=csv\ntest ! -e \"$RUN/train_log.csv\" || {\
+    \ echo \"Existing run: choose a new output directory or explicitly resume\" >&2; exit 1; }\nmkdir\
+    \ -p \"$RUN\"\n\"$PY\" supermimic/train.py --log_dir \"$RUN\" --iterations 20000 --ckpt_every 2000\
+    \ \\\n  --log_every 50 --num_envs 4096 --swanlab_mode offline 2>&1 | tee -a \"$RUN/stdout.log\"\n"
 - name: supermimic-eval
   type: shell
   streaming: true
-  cmd: "set -euo pipefail\nCODE=/data/nas_ray/home/sia.luo/code/supermimic/a1508d4\nPY=$CODE/IsaacLab/.venv/bin/python\n\
-    RUN=/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main\ncd \"$CODE\"\nunset PYTHONPATH PYTHONHOME\n\
-    \n# No --watch: evaluates every checkpoint that has no row in eval.csv yet, then exits.\n\"$PY\" supermimic/evaluate.py\
-    \ --run_dir \"$RUN\" --every 1 --headless\ncat \"$RUN/eval.csv\"\n\"$PY\" tools/plot.py \"$RUN\" --out \"$RUN/success_curve.png\"\
-    \ || true\n# Report learning quality separately from whether the training process completed.\n\"$PY\" - \"$RUN/eval.csv\"\
-    \ <<'PYREPORT'\nimport csv\nimport sys\nwith open(sys.argv[1]) as evaluation_file:\n    evaluations = list(csv.DictReader(evaluation_file))\n\
-    successful = [row for row in evaluations if float(row['norm_return']) >= 0.82 and int(row['n_failed']) == 0]\n\
-    print('TARGET_REACHED', bool(successful), 'CHECKPOINTS_EVALUATED', len(evaluations))\nPYREPORT\n"
+  cmd: "set -euo pipefail\nCODE=/data/nas_ray/home/sia.luo/supermimic\nPY=$CODE/.venv/bin/python\nRUN=/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main\n\
+    cd \"$CODE\"\nunset PYTHONPATH PYTHONHOME\n\n# No --watch: evaluates every checkpoint that has no\
+    \ row in eval.csv yet, then exits.\n\"$PY\" supermimic/evaluate.py --run_dir \"$RUN\" --every 1 --swanlab_mode\
+    \ offline\ncat \"$RUN/eval.csv\"\n\"$PY\" tools/plot.py \"$RUN\" --out \"$RUN/success_curve.png\"\
+    \ || true\n# Report learning quality separately from whether the training process completed.\n\"$PY\"\
+    \ - \"$RUN/eval.csv\" <<'PYREPORT'\nimport csv\nimport sys\nwith open(sys.argv[1]) as evaluation_file:\n\
+    \    evaluations = list(csv.DictReader(evaluation_file))\nsuccessful = [row for row in evaluations\
+    \ if float(row['norm_return']) >= 0.82 and int(row['n_failed']) == 0]\nprint('TARGET_REACHED', bool(successful),\
+    \ 'CHECKPOINTS_EVALUATED', len(evaluations))\nPYREPORT\n"

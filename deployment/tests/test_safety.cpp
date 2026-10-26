@@ -53,6 +53,40 @@ void testStateAndTiming() {
     require(!validateRobotState(state, profile, temperature, torque, true).empty(), "Motor fault accepted");
 }
 
+void testImuConventions() {
+    nlohmann::json configuration{
+        {"imu_frame", "pelvis"}, {"imu_convention_verified", true},
+        {"sensor_to_pelvis_wxyz", {1, 0, 0, 0}}
+    };
+    SafetyProfile profile;
+    profile.loadImuConvention(configuration);
+    require(profile.imu_frame == "pelvis" && profile.imu_convention_verified,
+            "Pelvis convention rejected");
+    configuration["imu_frame"] = "torso_as_pelvis";
+    profile.loadImuConvention(configuration);
+    require(profile.imu_frame == "torso_as_pelvis" && profile.imu_convention_verified,
+            "Direct torso-as-base convention rejected");
+    require(profile.sensor_to_pelvis_wxyz == std::array<float, 4>{1, 0, 0, 0},
+            "Direct torso convention changed the configured axis calibration");
+    configuration["imu_convention_verified"] = false;
+    profile.loadImuConvention(configuration);
+    require(!profile.imu_convention_verified, "Unverified convention silently approved");
+    configuration.erase("imu_convention_verified");
+    configuration["pelvis_imu_verified"] = true;
+    requireRejected([&] { profile.loadImuConvention(configuration); });
+    configuration["imu_frame"] = "pelvis";
+    profile.loadImuConvention(configuration);
+    require(profile.imu_convention_verified, "Legacy pelvis profile compatibility broken");
+    configuration["imu_convention_verified"] = false;
+    profile.loadImuConvention(configuration);
+    require(!profile.imu_convention_verified, "Legacy flag overrode explicit new review flag");
+    configuration["imu_frame"] = "typo";
+    requireRejected([&] { profile.loadImuConvention(configuration); });
+    configuration["imu_frame"] = "torso_as_pelvis";
+    configuration["sensor_to_pelvis_wxyz"] = {0, 0, 0, 0};
+    requireRejected([&] { profile.loadImuConvention(configuration); });
+}
+
 void testTargetAndHardwareGate(const std::filesystem::path& directory) {
     Bundle bundle(directory);
     SafetyProfile profile;
@@ -101,6 +135,7 @@ void testTargetAndHardwareGate(const std::filesystem::path& directory) {
 int main(int argument_count, char** arguments) {
     try {
         testStateAndTiming();
+        testImuConventions();
         if (argument_count == 2) testTargetAndHardwareGate(arguments[1]);
         std::cout << "safety tests passed" << std::endl;
         return 0;

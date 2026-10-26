@@ -164,7 +164,8 @@ guess the robot's network configuration:
   --interface YOUR_VERIFIED_INTERFACE --domain YOUR_VERIFIED_DOMAIN
 
 python -m deployment.make_safety_profile \
-  --bundle /path/to/g1-policy-bundle --output /existing/output/g1-review.json
+  --bundle /path/to/g1-policy-bundle --output /existing/output/g1-review.json \
+  --imu-frame torso_as_pelvis
 ```
 
 The generated template is **not** an approved configuration: model-derived
@@ -173,12 +174,29 @@ Hardware profiles must explicitly set every 29-joint array and timing/exit
 threshold, remain within model hard limits, and match the exact manifest SHA256.
 The template refuses to overwrite an existing review.
 
-Only a calibrated, **rigid pelvis IMU** is implemented. `sensor_to_pelvis_wxyz`
-means the rotation mapping sensor-frame vectors into the pelvis frame; both
-orientation and gyro are transformed. A torso IMU across the articulated waist
-is rejected, not silently treated as pelvis. If the actual firmware exposes only
-torso measurements, implement and verify articulated angular-velocity compensation
-before proceeding. Joint zero calibration must already match the training model.
+The adapter accepts two explicit IMU conventions:
+
+- `imu_frame: "pelvis"`: interpret the measurements as pelvis orientation/gyro.
+- `imu_frame: "torso_as_pelvis"`: directly use torso orientation/gyro as the
+  policy's base/pelvis state, without articulated waist compensation. This is the
+  default for newly generated hardware review templates, following the user's
+  existing G1 deployment convention. The simulation profile remains `pelvis`.
+
+Both read **`rt/lowstate.imu_state`**. The convention does not select a different
+topic and does not subscribe to `rt/secondary_imu`. `sensor_to_pelvis_wxyz` keeps
+its existing name for compatibility and represents fixed sensor-to-policy-base
+axis calibration: identity `[1,0,0,0]` means direct use without axis rotation.
+Both orientation and gyro receive the same fixed calibration; waist joint
+angles/velocities are not used to reconstruct pelvis motion.
+
+`imu_convention_verified` records that the source, quaternion order, axes and
+chosen base-state interpretation have been checked, not that the IMU is
+physically pelvis-mounted. Old `pelvis` profiles can still use
+`pelvis_imu_verified`; `torso_as_pelvis` requires the new flag explicitly. Flags
+remain false in generated templates. Torso and pelvis are not physically
+identical when the waist moves, so assess the selected checkpoint's tracking
+with this convention, rather than treating the approximation as a hardware
+incompatibility. Joint zero calibration must still match the training model.
 
 ## 6. Hardware execution boundary
 
@@ -186,7 +204,7 @@ There is deliberately no unattended hardware-start example. After separate
 authorization and supervised validation, the program requires all of:
 
 - Explicit `--mode hardware --enable-motors`, a non-loopback interface, and a
-  profile with `hardware_validated`, `pelvis_imu_verified`, `safe_exit_verified`.
+  profile with `hardware_validated`, `imu_convention_verified`, `safe_exit_verified`.
 - A terminal operator typing **ARM**, fresh valid state and a checked inactive
   stock controller. The program **never releases** the stock controller; use the
   manufacturer's supervised ownership procedure outside this program.

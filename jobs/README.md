@@ -5,13 +5,39 @@ desktop's separate md_ak session. No token transfer or new login is needed there
 
 ## Code and environment
 
-- Shared code: `/data/nas_ray/home/sia.luo/code/supermimic/a1508d4`.
-- Base commit: `a1508d42c9d1699a52e8233ab16d08c488441ab9`.
+- Shared code: `/data/nas_ray/home/sia.luo/supermimic` — the repository root itself, laid out
+  exactly like the developer checkout (`<code>/supermimic/`, `<code>/tools/`, `<code>/jobs/`, …).
+  There is no commit-named subdirectory and no `code/` level (it used to be
+  `.../sia.luo/code/supermimic/a1508d4`). The commit is tracked by Git, not by the path, so a new
+  commit does not require a new directory.
+- Base commit: `264db00276b29d22ac2dd9ee161c148561740e4a`.
 - Runtime changes: `local.patch` in the shared code directory, Git blob
-  `d02d89195ddaabc5998f56b358412b9c06a4ff3c`. Only the reusable host setup and data
-  download tools are patched; training algorithm and hyperparameter defaults are unchanged.
-- Environment: `<code>/IsaacLab/.venv`, using Isaac Lab at
-  `46d6cc3d7b115906fad12efd372fbf69f4e3d3ed` and its frozen uv lock.
+  `1e88207760ebb3eee0fb9d5729f27bb8eb701e59` — the uncommitted diff of the developer checkout
+  that the shared directory was synced from, with `jobs/` left out (that directory contains the
+  assertions below, so including it would make the hash depend on itself). The diff only touches
+  the host setup/data tooling and the deployment tree; training algorithm and hyperparameter
+  defaults are unchanged.
+- The shared directory is a byte-for-byte copy of the developer checkout's working tree at that
+  commit (same files, same Git objects), produced with `tar` because the dev pod has no `rsync`.
+  Re-sync it in place after committing locally; the path stays the same across commits, so the
+  job YAMLs only need a new base commit and a new `local.patch` hash.
+- Environment: `<code>/.venv` at the repository root, built by `tools/setup_uv.sh`, which keeps
+  Isaac Lab at `46d6cc3d7b115906fad12efd372fbf69f4e3d3ed` and its frozen uv lock as the project
+  and only redirects the environment's location (`UV_PROJECT_ENVIRONMENT`). Any earlier
+  `<code>/IsaacLab/.venv` is stale after a code move (its paths are absolute) and has to be
+  deleted. Do not move the directory while a job still uses it as `shared_workspace`.
+- `tools/setup_uv.sh` is run manually, not by the smoke job. Changes outside `jobs/` change
+  the `local.patch` blob hash, so the provenance assertions in the job YAMLs must be updated
+  together with that patch.
+- `local.patch` is not tracked by Git, so it has to be regenerated in the shared directory after
+  a sync, and the resulting blob hash has to match the assertions in the job YAMLs:
+
+  ```bash
+  cd /data/nas_ray/home/sia.luo/supermimic
+  git diff -- . ':(exclude)jobs' > local.patch
+  git hash-object local.patch          # must print 1e88207760ebb3eee0fb9d5729f27bb8eb701e59
+  git apply --reverse --check local.patch   # must succeed: the patch is already applied
+  ```
 - Assets: `<code>/data`; caches: `<code>/.cache` and the user's shared uv cache.
 - Formal run output: `/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main`.
 
@@ -20,7 +46,7 @@ desktop's separate md_ak session. No token transfer or new login is needed there
 `supermimic_h100.yaml` combines the following smoke, training, and evaluation tasks
 into one sequential Job. Later tasks remain BLOCKED until their predecessor succeeds.
 
-1. `supermimic_h100_smoke.yaml`: synchronize the environment, prepare assets, check
+1. `supermimic_h100_smoke.yaml`: reuse the already configured `<code>/.venv`, prepare assets, check
    FK against the simulator, then run 510 iterations to exercise policy updates
    after the 500-iteration world-model warm-up. Each invocation uses a fresh smoke
    output directory. A successful run writes `<code>/.cache/smoke-passed` containing
@@ -29,6 +55,10 @@ into one sequential Job. Later tasks remain BLOCKED until their predecessor succ
    20,000 iterations with 4,096 environments on one GPU, then evaluates all
    checkpoints. It refuses to overwrite an existing training log. Target return
    and failure counts are reported separately from execution success.
+
+The jobs do not run `uv sync`, install packages, or change the prepared environment.
+SwanLab logging is offline for smoke, training and evaluation; CSV logs, checkpoints
+and local SwanLab records remain under each run directory without needing container credentials.
 
 Both jobs prefer `rx-brain.aliyun_sh_h100`. Do not switch to default merely because
 an older local CLI does not recognize dotted queue names. md_ak 2.1.1 on the devpod
@@ -51,15 +81,26 @@ are printed, copied, or embedded in configuration.
 
 ## Current submission
 
-- Active pipeline: job **73872**, submitted 2026-10-26.
-- Web: https://ak.mondorobotics.com/jobs/73872
-- Smoke **88010**: RUNNING, currently bootstrapping the uv environment.
-- Training **88011** and evaluation **88012**: BLOCKED on their predecessors.
-- Logs: `md_ak logs --job 73872 --task-index 0 --tail 12000` (use index 1 for training).
-- Status: `md_ak detail --job 73872`.
-- The earlier standalone smoke **73867** was stopped; it did not reach training.
+- Job **74284**, submitted 2026-10-26 at 21:45 UTC+8, uses
+  `jobs/supermimic_h100.yaml` with one GPU in `rx-brain.aliyun_sh_h100`.
+- Web: https://ak.mondorobotics.com/jobs/74284
+- Smoke **88614** SUCCEEDED, including iteration 510 with policy and critic updates.
+  Training **88615** is RUNNING; evaluation **88616** is BLOCKED until training succeeds.
+  This is a smoke/startup record, not a completed training or learning-quality result.
+- Shared code: `/data/nas_ray/home/sia.luo/supermimic`, base commit and runtime patch
+  as recorded above. Formal output: `/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main`.
+- Status: `md_ak detail --job 74284`.
+- Logs: `md_ak logs --job 74284 --task-index 0 --tail 12000` (index 1 for training).
+- Jobs **73872** and **73867** were stopped before training; no old run is resumed.
+- Job **74275** failed before simulation because its YAML used the unsupported
+  `--headless` flag. The flag is removed from all tasks; this kit-less launcher defaults
+  to no visualizer when none is selected.
 
-The cluster name is not a physical GPU model guarantee. The allocated smoke device
+The prepared `<code>/.venv` has been checked: torch `2.11.0+cu130`, mujoco `3.15.0`,
+warp-lang `1.17.0` and swanlab `0.10.2` import successfully. GPU execution is checked
+on the allocated worker by the smoke task, not inferred from the development pod.
+
+The cluster name is not a physical GPU model guarantee. Job 74284's allocated smoke device
 reports **NVIDIA L20Z**, 81,559 MiB, compute capability **8.9**, driver **580.105.08**.
 This is not an H100 GPU (compute capability 9.0), even though it was assigned from
 `rx-brain` in `aliyun_sh_h100`. This run uses the requested cluster and must not be
