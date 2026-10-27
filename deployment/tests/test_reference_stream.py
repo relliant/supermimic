@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from deployment import reference_stream, send_motion
-from deployment.reference_stream import ReferencePacket, decode
+from deployment.streaming import protocol as reference_stream, motion as send_motion
+from deployment.streaming.protocol import ReferencePacket, decode
 
 
 @pytest.fixture

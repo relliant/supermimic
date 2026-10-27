@@ -23,6 +23,11 @@ Version 2 uses the same schema name and `control_dt=0.02`, but carries:
 - `reference`: K+1..128 overlapping, complete 71D rows on a 20 ms timeline,
   or null for stop. No `horizon_mode` field: all live rows are buffered measurements.
 
+The optional simulation-debug `--ignore-sdk-timestamps` path instead uses host
+sampling time and explicitly reports `acquisition_freshness_verified=false`;
+it cannot distinguish cached SDK poses from fresh acquisitions. See
+[Pico timestamp limitations](PICO.md) before using that bypass.
+
 Publication, source freshness and reference time are distinct. Refreshing a
 publication cannot refresh an old body sample. Rows must end no later than the
 latest observed acquisition time. Packets are limited to 256 KiB. Start/reset is
@@ -81,7 +86,7 @@ cached packets. No automatic robot recovery or real-hardware safety is implied.
 
 ## Packet contract
 
-Use `deployment.reference_stream.ReferencePacket` and `.encode()` to create
+Use `deployment.streaming.protocol.ReferencePacket` and `.encode()` to create
 bounded JSON. The receiver uses `decode()` and rejects unknown fields, invalid
 dimensions, nonfinite values, bad quaternion norms, negative/out-of-order
 sequences, expired packets, or timestamps over 0.5 seconds in the future.
@@ -104,7 +109,7 @@ Row zero is the current desired state; rows 1..K are desired states at
 
 1. root world position (3);
 2. normalized root quaternion **wxyz** (4);
-3. G1 29 joint positions in `deployment.contract.G1_JOINT_NAMES` order;
+3. G1 29 joint positions in `deployment.common.contract.G1_JOINT_NAMES` order;
 4. corresponding 29 joint velocities;
 5. root world linear velocity (3);
 6. root world angular velocity (3).
@@ -136,7 +141,7 @@ in row zero. Set `horizon_mode="hold"`. A predictor instead supplies its own
 consistent position/orientation/velocity rows and sets `"predicted"`. CSV playback
 uses `"recorded"` and preserves the selected clip-tail convention.
 
-Reusable producer helpers live in `deployment.send_motion.MotionPublisher`:
+Reusable producer helpers live in `deployment.streaming.motion.MotionPublisher`:
 `acquire()`, `wait_ready()`, `send_and_wait(packet)`, and
 `close(interrupted=...)`. These manage the owner lease, controller identity,
 pause-aware acknowledgements and a stop on interruption. For true live input,

@@ -1,7 +1,9 @@
 # Isolated MuJoCo SDK2 bridge
 
-`sim_bridge.py` is a standalone, headless simulation process. It does not import
-Isaac Lab, the training package, the exporter, or the hardware runtime. It does
+`python -m deployment.sim_bridge` starts a standalone, headless simulation
+process implemented in [simulation/dds_bridge.py](../simulation/dds_bridge.py).
+It does not import Isaac Lab, the training package, the exporter, or the hardware
+runtime. It does
 not execute a policy: a separate controller must consume `rt/lowstate` and write
 HG `rt/lowcmd` messages. There is no direct ONNX Runtime transport in this bridge.
 
@@ -34,7 +36,7 @@ a ground plane at world z=0; existing scene floors are not removed.
 Example for an explicitly requested, isolated local run:
 
 ```bash
-python deployment/sim_bridge.py \
+python -m deployment.sim_bridge \
   --bundle /absolute/path/to/exported_bundle \
   --mjcf /absolute/path/to/g1_29dof.xml \
   --interface lo --domain 42 \
@@ -52,7 +54,7 @@ equal to 0.02, positive `frame_count`, 29 `joint_names` in fixed G1 SDK order, a
 29-element `default_joint_position`, `kp`, `kd`, `effort_limit`, `velocity_limit`,
 `action_scale`, `joint_lower`, and `joint_upper` arrays. Gains, effort/velocity
 limits and action scales must be strictly positive. Lower bounds must be strictly
-less than upper bounds. As in `deployment.contract.verify_bundle`,
+less than upper bounds. As in `deployment.common.contract.verify_bundle`,
 `history_length` and `goal_frames` are positive integers, `observation_dim=99`,
 `action_dim=29`, and `goal_dim=73*goal_frames`. Filenames must be the fixed
 `policy.onnx`, `reference.bin`, and `goals.bin` names.
@@ -172,7 +174,7 @@ Run focused tests without DDS:
 
 ```bash
 python -m pytest deployment/tests/test_sim_bridge.py -q
-python deployment/sim_bridge.py --help
+python -m deployment.sim_bridge --help
 ```
 
 The tests create temporary 29-joint XML/mesh/include fixtures at runtime; no robot

@@ -5,8 +5,8 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from deployment.live_reference import LiveReferencePacket, LiveReferenceReceiver, decode_live
-from deployment.reference_stream import decode
+from deployment.streaming.live import LiveReferencePacket, LiveReferenceReceiver, decode_live
+from deployment.streaming.protocol import decode
 
 
 class FeedbackSimulation:

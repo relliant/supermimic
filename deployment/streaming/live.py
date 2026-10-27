@@ -15,12 +15,12 @@ import uuid
 
 import numpy as np
 
-from .contract import CONTROL_DT
-from .reference_stream import (
+from deployment.common.contract import CONTROL_DT
+from deployment.streaming.protocol import (
     MAX_PAYLOAD_BYTES, ReferencePacket, _number, _unique_object, _validate_packet,
     packet_key, status_key,
 )
-from .send_motion import _PUBLISH, _RELEASE_LOCK, _RENEW_LOCK
+from deployment.streaming.motion import _PUBLISH, _RELEASE_LOCK, _RENEW_LOCK
 
 
 @dataclass

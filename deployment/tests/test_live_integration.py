@@ -25,9 +25,9 @@ import numpy as np
 class LiveIntegrationTests(unittest.TestCase):
     def test_buffered_pose_replay_and_bounded_underrun(self):
         import redis
-        from deployment.contract import load_reference
-        from deployment.live_reference import LivePublisher, LiveReferencePacket
-        from deployment.teleop_reference import BufferedReference
+        from deployment.common.contract import load_reference
+        from deployment.streaming.live import LivePublisher, LiveReferencePacket
+        from deployment.teleop.reference import BufferedReference
 
         root = Path(__file__).resolve().parents[2]
         policy = Path(os.environ['SUPERMIMIC_ONNX']).resolve(strict=True)

@@ -13,8 +13,8 @@ import numpy as np
 import pytest
 import torch
 
-from deployment import contract
-from deployment.export_policy import (
+from deployment.common import contract
+from deployment.export.policy import (
     Policy, RunningNorm, build_parity_samples, export_bundle, export_onnx,
     load_policy, validate_onnx_parity,
 )
@@ -421,6 +421,20 @@ def test_atomic_bundle_schema_hashes_no_overwrite_and_failure_cleanup(tmp_path, 
     assert manifest["history_length"] == 3 and manifest["goal_dim"] == 146
     assert manifest["metadata"]["checkpoint"]["sha256"] == contract.sha256_file(checkpoint)
     assert manifest["metadata"]["source_sha256"]["supermimic/networks.py"]
+    for source in ("deployment/common/contract.py", "deployment/export/policy.py"):
+        assert manifest["metadata"]["source_sha256"][source] == contract.sha256_file(REPOSITORY / source)
+    # The relocated profile generator must still find deployment/config, not
+    # silently resolve a similarly named directory relative to its new package.
+    from deployment.safety.profile import main as generate_profile
+
+    profile_path = tmp_path / "unvalidated_profile.json"
+    monkeypatch.setattr(sys, "argv", ["make_safety_profile", "--bundle", str(destination),
+                                     "--output", str(profile_path)])
+    generate_profile()
+    profile = json.loads(profile_path.read_text())
+    assert profile["hardware_validated"] is False
+    assert profile["safe_exit_verified"] is False
+    assert profile["manifest_sha256"] == contract.sha256_file(destination / "manifest.json")
     reference = np.fromfile(destination / "reference.bin", dtype="<f4").reshape(-1, 71)
     np.testing.assert_array_equal(reference, contract.load_reference(motion_csv))
     goals = np.fromfile(destination / "goals.bin", dtype="<f4").reshape(-1, 146)
@@ -448,7 +462,7 @@ def test_atomic_bundle_schema_hashes_no_overwrite_and_failure_cleanup(tmp_path, 
     def fail_export(*arguments, **keywords):
         raise RuntimeError("intentional failed export")
 
-    monkeypatch.setattr("deployment.export_policy.export_onnx", fail_export)
+    monkeypatch.setattr("deployment.export.policy.export_onnx", fail_export)
     failed_destination = tmp_path / "failed"
     with pytest.raises(RuntimeError, match="intentional"):
         export_bundle(checkpoint, motion_csv, failed_destination, mjcf, parity_samples=1)

@@ -6,6 +6,42 @@ robot states; the controller consumes delayed, already-observed future targets.
 This does not use SONIC tokens or the other repository's 35D Redis observations.
 No robot-facing SDK2 channel, motor command, or physical robot is involved.
 
+## Quickstart: confirmed simulation-debug path
+
+Run all commands from the repository root. Prerequisites: an exported ONNX
+policy, a compatible SDK/GMR Python environment, local Redis (`redis-cli ping`
+returns `PONG`), and the Pico application connected to a **manually started**
+XRoboToolkit PC Service. Keep the working Mac forwarding setup, when used, and
+SDK shared-library environment (including `LD_LIBRARY_PATH`) intact. Do not
+start a duplicate Redis or PC Service, or clear a shared Redis database.
+
+Terminal 1: start the local controller/viewer:
+
+```bash
+.venv/bin/python -m deployment.sim2sim \
+  --policy checkpoints/1026_baseline_lafan/ckpt_020000.onnx \
+  --stream-mode live --channel supermimic:pico
+```
+
+Terminal 2: use the interpreter/environment with the working SDK and GMR:
+
+```bash
+.venv/bin/python -m deployment.teleop_pico \
+  --wbc-root "$HOME/Project/WholeBodyControl-PolicyTraining" \
+  --human-height 1.6 --channel supermimic:pico \
+  --ignore-sdk-timestamps --run
+```
+
+`1.6` is a placeholder in metres: replace it with the operator's actual height.
+Wait for `WAITING`, then press right **A** to arm; A again pauses/stops, and left
+**X** exits the producer. The operator confirmed this timestamp-bypass runtime
+path after installing the SDK; it is **not** full live-tracking qualification.
+The optional debug flag disables SDK acquisition-freshness verification:
+`sdk_timestamps_ignored=true`, `acquisition_freshness_verified=false`. Cached
+poses can appear fresh. Omit it for the default clock-checked path, whose device
+timestamp compatibility still needs operator verification. See below for the
+full checks, watchdogs and limitations.
+
 ## 1. Inspect dependencies without connecting a device
 
 From the SuperMimic repository root:
@@ -37,11 +73,14 @@ reference repositories. If a compatible SDK/GMR interpreter is already working,
 invoke **this repository's** `python -m deployment.teleop_pico` with that
 interpreter from the SuperMimic root; Redis isolates its ABI from the ONNX process.
 
-Local inspection on 2026-10-27 found PC Service's startup script at
+Initial inspection on 2026-10-27 found PC Service's startup script at
 `/opt/apps/roboticsservice/runService.sh`, but no SDK binding in SuperMimic's
 `.venv` or the reference checkout's `.venv` / `.venv-gmr`. SuperMimic's `.venv`
 also lacked `mink` and OpenCV. `.venv-gmr` had mink/daqp but still lacked the SDK.
-No dependency/service was changed by this inspection; rerun `--check` after setup.
+This is a historical setup check, not the current installation status: the
+operator subsequently installed the SDK and confirmed the timestamp-bypass
+runtime above. No dependency/service was changed by the initial inspection;
+rerun `--check` in the environment you intend to use.
 
 Start/connect the Pico application and PC Service manually using your known
 working setup. This program never starts, restarts or kills PC Service. It
@@ -130,7 +169,8 @@ never teleport physics. This is not a real-robot startup strategy.
   `--no-recenter` preserves the original GMR world frame. Joint zero positions,
   observation scales, policy action scale and PD gains are not redefined.
 
-`BufferedReference` applies source-dt exponential filtering (`--filter-tau .03`),
+[deployment.teleop.reference.BufferedReference](../teleop/reference.py) applies
+source-dt exponential filtering (`--filter-tau .03`),
 position/joint interpolation and quaternion SLERP on an exact 20 ms grid. It
 computes joint/world linear velocities and SO(3) world angular velocities after
 resampling. Every emitted row has a measured derivative guard sample beyond it;
@@ -194,7 +234,9 @@ XRoboToolkit SDK. Temporary services and outputs are cleaned on exit.
 Live Pico/GMR tracking has **not** completed qualification. After SDK installation,
 operator logs showed aggregate body timestamp zero with progressing per-joint
 timestamps; the adapter now supports a pinned joint-clock fallback for that
-client format. This compatibility fix still needs operator verification with
-the device. Synthetic clocks, mocked SDK tests and recorded-pose replay do not
+client format. The operator confirmed running with `--ignore-sdk-timestamps`,
+not the default clock-checked fallback or complete hardware tracking quality.
+The fallback still needs operator verification with the device. Synthetic
+clocks, mocked SDK tests and recorded-pose replay do not
 establish actual Pico latency, IK quality, calibration or full-motion tracking
 performance. No physical robot was accessed.

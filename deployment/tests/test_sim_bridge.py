@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from deployment.sim_bridge import (
+from deployment.simulation.dds_bridge import (
     BUNDLE_FILES,
     G1_JOINT_NAMES,
     JOINT_COUNT,
@@ -77,7 +77,7 @@ def simulation_clock(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     def advance(seconds: float) -> None:
         clock.seconds += seconds
 
-    monkeypatch.setattr("deployment.sim_bridge.time", SimpleNamespace(
+    monkeypatch.setattr("deployment.simulation.dds_bridge.time", SimpleNamespace(
         monotonic=lambda: clock.seconds, sleep=advance,
     ))
     return clock

@@ -15,8 +15,8 @@ from unittest import mock
 import numpy as np
 import torch
 
-from deployment import export_policy
-from deployment.contract import sha256_file
+from deployment.export import policy as export_policy
+from deployment.common.contract import sha256_file
 
 
 @unittest.skipUnless(importlib.util.find_spec("onnx"), "optional onnx package is not installed")

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from deployment import teleop_pico as pico
+from deployment.teleop import pico
 
 
 @dataclass
@@ -487,7 +487,7 @@ def test_stopped_receiver_requires_explicit_edge_then_refills_new_buffer(session
 
 
 def test_actual_overlapping_buffer_keeps_publishing_when_first_row_is_unchanged(session):
-    from deployment.teleop_reference import BufferedReference
+    from deployment.teleop.reference import BufferedReference
 
     session.buffer = BufferedReference(2)
     qpos = np.zeros(36)
@@ -612,7 +612,8 @@ def test_simulator_limits_reject_disjoint_gmr_ranges():
 
 @pytest.mark.parametrize("failure_phase", ["limits", "acquire", "wait_ready", "mode"])
 def test_run_initializes_before_lease_and_closes_sdk_on_startup_failure(monkeypatch, failure_phase):
-    from deployment import contract, live_reference
+    from deployment.common import contract
+    from deployment.streaming import live as live_reference
 
     events = []
 

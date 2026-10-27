@@ -35,7 +35,10 @@ claim; the deployment guide lists the remaining physical validation gates.
 
 For standalone ONNX-to-MuJoCo visualization with runtime motion selection,
 reference overlay and video recording (no DDS required), see
-[deployment/SIM2SIM.md](deployment/SIM2SIM.md).
+[deployment/docs/SIM2SIM.md](deployment/docs/SIM2SIM.md).
+
+For Pico teleoperation, start with the dual-terminal commands in the
+[deployment Pico quick start](deployment/README.md#pico-quick-start).
 
 ## Layout
 

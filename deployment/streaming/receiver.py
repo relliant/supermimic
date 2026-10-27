@@ -14,9 +14,9 @@ import queue
 import time
 import uuid
 
-from .contract import CONTROL_DT
-from .reference_stream import ExpiredReferenceError, connect_redis, decode, packet_key, status_key
-from .live_reference import LiveReferenceReceiver
+from deployment.common.contract import CONTROL_DT
+from deployment.streaming.protocol import ExpiredReferenceError, connect_redis, decode, packet_key, status_key
+from deployment.streaming.live import LiveReferenceReceiver
 
 
 class ReferenceReceiver:
@@ -103,7 +103,7 @@ class ReferenceReceiver:
 
 def run_stream_simulation(simulation, arguments) -> None:
     """Keep the policy/viewer alive across independent file or teleop producers."""
-    from .sim2sim import TrajectoryRecorder, VideoRecorder
+    from deployment.simulation.sim2sim import TrajectoryRecorder, VideoRecorder
     import redis
 
     controller_id = uuid.uuid4().hex

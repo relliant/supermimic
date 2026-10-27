@@ -6,6 +6,8 @@ __pycache__/
 build_*.log
 # upstream checkout (pinned commit cloned by tools/setup.sh)
 IsaacLab/
+# Local Pico SDK checkout and native runtime libraries (installed separately).
+XRoboToolkit-PC-Service-Pybind/
 # third-party data (downloaded by tools/download_data.sh) and generated assets
 data/
 # training runs: checkpoints, logs

@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from deployment.teleop_reference import BufferedReference, CONTROL_DT
+from deployment.teleop.reference import BufferedReference, CONTROL_DT
 
 
 UNIX_START = 1_790_000_000.0

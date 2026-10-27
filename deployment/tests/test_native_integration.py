@@ -35,7 +35,7 @@ BRIDGE_READY = "NATIVE_TEST_BRIDGE_READY"
 BRIDGE_DRIVER = """
 import select
 import sys
-from deployment import sim_bridge
+from deployment.simulation import dds_bridge as sim_bridge
 
 original_run = sim_bridge.SimulationBridge.run
 
@@ -91,8 +91,8 @@ def synthetic_fixture(synthetic_directory):
 
         import numpy as np
         import torch
-        from deployment import contract
-        from deployment.export_policy import Policy, export_bundle
+        from deployment.common import contract
+        from deployment.export.policy import Policy, export_bundle
 
         directory = synthetic_directory
         checkpoint = directory / "SYNTHETIC_ZERO_ACTION_NOT_LEARNED.pt"

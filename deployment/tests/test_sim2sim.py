@@ -6,10 +6,10 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from deployment import sim2sim
-from deployment.contract import DEFAULT_JOINT_POSITION, G1_JOINT_NAMES, build_goals
-from deployment.reference_receiver import ReferenceReceiver
-from deployment.reference_stream import ReferencePacket
+from deployment.simulation import sim2sim
+from deployment.common.contract import DEFAULT_JOINT_POSITION, G1_JOINT_NAMES, build_goals
+from deployment.streaming.receiver import ReferenceReceiver
+from deployment.streaming.protocol import ReferencePacket
 
 
 class RecordingPolicy:
