@@ -9,6 +9,18 @@ conformance and synthetic tests are not evidence that a trained policy can
 balance a real G1. No robot was connected or actuated while implementing this.
 See [VALIDATION.md](VALIDATION.md) for the actual checks and remaining gates.
 
+## Standalone ONNX sim2sim viewer
+
+For checkpoint-only ONNX export and interactive MuJoCo validation without
+SDK2/DDS, see [SIM2SIM.md](SIM2SIM.md). Model export and motion selection are
+independent; start ONNX first and send reference windows from a separate Redis
+producer, or use the direct-file mode. The viewer supports a reference ghost,
+pause/reset, clip switching in file mode and video/trajectory
+recording. The bundle workflow below remains for the native onboard controller.
+For the separate Pico/GMR producer, buffered real-future windows and independent
+live clock, see [PICO.md](PICO.md). SDK availability and actual device tracking
+must be checked separately; offline sim2sim tests are not Pico qualification.
+
 ## 1. Export a specific checkpoint and reference clip
 
 Run from this repository's root, using an environment with

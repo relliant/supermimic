@@ -9,6 +9,7 @@ IsaacLab/
 # third-party data (downloaded by tools/download_data.sh) and generated assets
 data/
 # training runs: checkpoints, logs
+checkpoints/
 logs/
 swanlog/
 *.pt

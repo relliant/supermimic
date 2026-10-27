@@ -48,7 +48,7 @@ tasks:
       test ! -e "$RUN/train_log.csv" || { echo "Existing run: choose a new output directory or explicitly resume" >&2; exit 1; }
       mkdir -p "$RUN"
       "$PY" supermimic/train.py --log_dir "$RUN" --iterations 20000 --ckpt_every 2000 \
-        --log_every 50 --num_envs 4096 --swanlab_mode offline 2>&1 | tee -a "$RUN/stdout.log"
+        --log_every 50 --num_envs 4096 --swanlab_mode online 2>&1 | tee -a "$RUN/stdout.log"
 
   - name: "supermimic-eval"
     type: "shell"
@@ -62,7 +62,7 @@ tasks:
       unset PYTHONPATH PYTHONHOME
 
       # No --watch: evaluates every checkpoint that has no row in eval.csv yet, then exits.
-      "$PY" supermimic/evaluate.py --run_dir "$RUN" --every 1 --swanlab_mode offline
+      "$PY" supermimic/evaluate.py --run_dir "$RUN" --every 1 --swanlab_mode online
       cat "$RUN/eval.csv"
       "$PY" tools/plot.py "$RUN" --out "$RUN/success_curve.png" || true
       # Report learning quality separately from whether the training process completed.

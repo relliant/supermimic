@@ -185,7 +185,9 @@ def map_joints(model: Any, joint_names: tuple[str, ...]) -> JointMapping:
     )
 
 
-def build_model(mjcf: str | Path, bundle: SimulationBundle) -> tuple[Any, Any, JointMapping]:
+def build_model(
+    mjcf: str | Path, bundle: SimulationBundle, *, preserve_visual_only: bool = False,
+) -> tuple[Any, Any, JointMapping]:
     """Load the original path with MjSpec, retaining compiler/include asset bases."""
     import mujoco
 
@@ -207,6 +209,10 @@ def build_model(mjcf: str | Path, bundle: SimulationBundle) -> tuple[Any, Any, J
     # Set masks before compiling: changing geom masks alone leaves body masks
     # and collision acceleration structures inconsistent for visual-only geoms.
     for geometry in specification.geoms:
+        # Standalone sim2sim keeps the original contact geometry, especially the
+        # foot's contact spheres. Keep the legacy DDS bridge default unchanged.
+        if preserve_visual_only and geometry.contype == 0 and geometry.conaffinity == 0:
+            continue
         ancestor = geometry.parent
         # MuJoCo 3.11's worldbody.parent is not a safe/null sentinel. Never
         # dereference it, even when classifying unrelated environment geometry.

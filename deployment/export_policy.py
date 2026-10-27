@@ -1,6 +1,8 @@
-"""Export a single checkpoint and motion into a self-contained offline bundle.
+"""Export a checkpoint to standalone ONNX, or include a motion in a bundle.
 
 Usage::
+
+    python -m deployment.export_policy --checkpoint run/ckpt.pt --output policy.onnx
 
     python -m deployment.export_policy --checkpoint run/ckpt.pt \
         --motion motion.csv --mjcf data/g1_description/g1_29dof.xml \
@@ -36,6 +38,9 @@ from .contract import (
     build_goals, build_observation, initialize_history, load_reference,
     positive_integer, robot_parameters, sha256_file, update_history, verify_bundle,
 )
+
+POLICY_METADATA_KEY = "supermimic"
+POLICY_SCHEMA = "supermimic.policy"
 
 
 class RunningNorm(nn.Module):
@@ -239,6 +244,81 @@ def validate_onnx_parity(path: str | Path, parity: dict[str, Any], history_lengt
     return {"onnxruntime_checked": True, "maximum_absolute_action_error": maximum_error}
 
 
+@torch.inference_mode()
+def build_model_parity_samples(policy: Policy, sample_count: int = 8) -> dict[str, Any]:
+    """Sample bounded, deterministic checkpoint-normalized inputs without motion."""
+    count = positive_integer(sample_count, "parity_samples")
+    if count < 2:
+        raise ValueError("standalone export requires at least two parity samples")
+    generator = torch.Generator(device="cpu").manual_seed(20261026)
+    samples = []
+    for _ in range(count):
+        history_offsets = torch.randn(1, policy.hist, OBSERVATION_DIM, generator=generator).clamp(-2.0, 2.0)
+        goal_offsets = torch.randn(1, GOAL_FRAME_DIM * policy.goal_frames, generator=generator).clamp(-2.0, 2.0)
+        history = policy.obs_norm.mean + history_offsets * torch.sqrt(policy.obs_norm.var + policy.obs_norm.eps**2)
+        goal = policy.goal_norm.mean + goal_offsets * torch.sqrt(policy.goal_norm.var + policy.goal_norm.eps**2)
+        action = policy(history, goal)
+        if not all(torch.isfinite(tensor).all() for tensor in (history, goal, action)):
+            raise ValueError("policy produced nonfinite standalone parity inputs or actions")
+        samples.append({
+            "history": history.flatten().tolist(), "goal": goal.flatten().tolist(),
+            "action": action.flatten().tolist(),
+        })
+    return {"samples": samples}
+
+
+def export_model(
+    checkpoint: str | Path,
+    output: str | Path,
+    *,
+    parity_samples: int = 8,
+) -> dict[str, Any]:
+    """Publish one motion-independent ONNX file with a JSON metadata contract.
+
+    ``metadata_props['supermimic']`` contains the returned dictionary, including
+    verification status. Publication uses an exclusive hard link to the fully
+    validated sibling temporary file, so even a racing symlink cannot be replaced.
+    """
+    destination = Path(os.path.abspath(output))
+    if os.path.lexists(destination):
+        raise FileExistsError(f"output already exists; refusing to overwrite: {destination}")
+    if destination.suffix.lower() != ".onnx":
+        raise ValueError("standalone output must be an .onnx file path")
+    if not destination.parent.is_dir():
+        raise ValueError(f"output parent directory does not exist: {destination.parent}")
+    checkpoint_path = Path(checkpoint).resolve()
+    checkpoint_sha256 = sha256_file(checkpoint_path)
+    policy, policy_metadata = load_policy(checkpoint_path)
+    parity = build_model_parity_samples(policy, parity_samples)
+    metadata = {
+        "schema": POLICY_SCHEMA, "schema_version": SCHEMA_VERSION,
+        "history_length": policy.hist, "goal_frames": policy.goal_frames,
+        "observation_dim": OBSERVATION_DIM, "goal_dim": GOAL_FRAME_DIM * policy.goal_frames,
+        "action_dim": ACTION_DIM, "control_dt": CONTROL_DT,
+        "source_checkpoint_sha256": checkpoint_sha256,
+        "export_dtype": "float32", "history_order": "oldest_to_newest",
+        **policy_metadata,
+    }
+    with tempfile.TemporaryDirectory(prefix=f".{destination.name}.", dir=destination.parent) as temporary_directory:
+        temporary_model = Path(temporary_directory) / POLICY_FILE
+        export_onnx(policy, temporary_model)
+        metadata["verification"] = {
+            **validate_onnx_parity(temporary_model, parity, policy.hist),
+            "parity_sample_count": len(parity["samples"]),
+            "sampling": "checkpoint mean plus bounded normal offsets times normalization standard deviation",
+        }
+        import onnx
+
+        graph = onnx.load(str(temporary_model), load_external_data=False)
+        onnx.helper.set_model_props(graph, {POLICY_METADATA_KEY: json.dumps(metadata, sort_keys=True, allow_nan=False)})
+        onnx.checker.check_model(graph)
+        onnx.save_model(graph, str(temporary_model))
+        if checkpoint_sha256 != sha256_file(checkpoint_path):
+            raise ValueError("input checkpoint changed during export")
+        os.link(temporary_model, destination, follow_symlinks=False)
+    return metadata
+
+
 def _source_provenance() -> dict[str, Any]:
     repository = Path(__file__).resolve().parents[1]
     source_files = (
@@ -354,18 +434,32 @@ def export_bundle(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--checkpoint", required=True, type=Path, help="training checkpoint with pi and args")
-    parser.add_argument("--motion", required=True, type=Path, help="one LAFAN retarget CSV (xyzw input quaternion)")
-    parser.add_argument("--output", required=True, type=Path, help="fresh bundle directory; parent must exist")
-    parser.add_argument("--mjcf", required=True, type=Path, help="G1 MJCF used to compile the 29 hard joint ranges")
+    parser.add_argument("--motion", type=Path, help="bundle mode: one LAFAN retarget CSV (xyzw input quaternion)")
+    parser.add_argument("--output", required=True, type=Path, help="fresh .onnx file, or bundle directory; parent must exist")
+    parser.add_argument("--mjcf", type=Path, help="bundle mode: G1 MJCF used to compile the 29 hard joint ranges")
     parser.add_argument("--src-fps", type=float, default=30.0, help="motion source rate (default: 30 Hz)")
     parser.add_argument("--parity", "--parity-samples", dest="parity_samples", type=int, default=8,
                         help="number of deterministic parity cases (default: 8; must be positive)")
     arguments = parser.parse_args(argv)
+    if (arguments.motion is None) != (arguments.mjcf is None):
+        parser.error("--motion and --mjcf must be supplied together for bundle export")
     try:
-        manifest = export_bundle(**vars(arguments))
+        if arguments.motion is None:
+            metadata = export_model(arguments.checkpoint, arguments.output, parity_samples=arguments.parity_samples)
+        else:
+            manifest = export_bundle(**vars(arguments))
     except (ValueError, RuntimeError, OSError) as error:
         parser.exit(1, f"export failed: {error}\n")
-    print(f"Exported {manifest['frame_count']} frames to {arguments.output}")
+    if arguments.motion is None:
+        print(f"Exported standalone policy to {arguments.output}")
+        verification = metadata["verification"]
+        if verification["onnxruntime_checked"]:
+            print(f"ONNX Runtime parity passed ({verification['parity_sample_count']} samples; "
+                  f"maximum absolute action error {verification['maximum_absolute_action_error']:.6g})")
+        else:
+            print(f"ONNX Runtime parity SKIPPED: {verification['reason']}")
+    else:
+        print(f"Exported {manifest['frame_count']} frames to {arguments.output}")
     return 0
 
 

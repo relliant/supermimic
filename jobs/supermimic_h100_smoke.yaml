@@ -86,7 +86,7 @@ tasks:
       RUN=/data/nas_ray/home/sia.luo/experiments/supermimic/smoke-$(date -u +%Y%m%dT%H%M%SZ)
       mkdir -p "$RUN"
       "$PY" supermimic/train.py --log_dir "$RUN" --iterations 510 --ckpt_every 510 \
-        --log_every 10 --num_envs 4096 --swanlab_mode offline
+        --log_every 10 --num_envs 4096 --swanlab_mode online
       test -f "$RUN/ckpt_000510.pt"
       mkdir -p "$CODE/.cache"
       git hash-object local.patch > "$CODE/.cache/smoke-passed"

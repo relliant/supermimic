@@ -57,8 +57,28 @@ into one sequential Job. Later tasks remain BLOCKED until their predecessor succ
    and failure counts are reported separately from execution success.
 
 The jobs do not run `uv sync`, install packages, or change the prepared environment.
-SwanLab logging is offline for smoke, training and evaluation; CSV logs, checkpoints
-and local SwanLab records remain under each run directory without needing container credentials.
+Future smoke, training and evaluation tasks explicitly use SwanLab `online` mode.
+The worker process must receive `SWANLAB_API_KEY` through the platform's secret
+injection mechanism, or have its own accessible SwanLab login. Logging in on the
+development pod does not automatically authenticate a separate worker container.
+Do not put credentials in Job YAML or Git.
+
+Job 74284 ran offline. On 2026-10-27, the development pod login verified as
+`relliant`, and training run `rvw43orm` uploaded successfully (15,747 records):
+https://swanlab.cn/@relliant/supermimic_g1/runs/e5wzo34j
+
+Evaluation run `tr4f6bz2` has not uploaded: the following request returned
+`Forbidden` with no project READ permission for the current credentials. Resolve
+that permission or log in with an authorized account before retrying evaluation
+only; do not upload the successful training run again as a new experiment.
+The local records remain intact. No training restart is necessary.
+
+```bash
+cd /data/nas_ray/home/sia.luo/supermimic
+.venv/bin/swanlab verify
+.venv/bin/swanlab sync --project supermimic_g1 \
+  /data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main/swanlab/evaluation/run-20261026_160049-tr4f6bz2
+```
 
 Both jobs prefer `rx-brain.aliyun_sh_h100`. Do not switch to default merely because
 an older local CLI does not recognize dotted queue names. md_ak 2.1.1 on the devpod
@@ -84,9 +104,12 @@ are printed, copied, or embedded in configuration.
 - Job **74284**, submitted 2026-10-26 at 21:45 UTC+8, uses
   `jobs/supermimic_h100.yaml` with one GPU in `rx-brain.aliyun_sh_h100`.
 - Web: https://ak.mondorobotics.com/jobs/74284
-- Smoke **88614** SUCCEEDED, including iteration 510 with policy and critic updates.
-  Training **88615** is RUNNING; evaluation **88616** is BLOCKED until training succeeds.
-  This is a smoke/startup record, not a completed training or learning-quality result.
+- Smoke **88614**, training **88615** and evaluation **88616** all SUCCEEDED.
+  The pipeline completed on 2026-10-27 at 00:36 UTC+8.
+- Final checkpoint: iteration 20,000, training wall time 2.0177 hours,
+  evaluation normalized return 0.8428 and 0/40 failed clips.
+- First checkpoint meeting normalized return >= 0.82 with no failed clips:
+  iteration 10,000, training wall time 1.0004 hours (return 0.8229).
 - Shared code: `/data/nas_ray/home/sia.luo/supermimic`, base commit and runtime patch
   as recorded above. Formal output: `/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main`.
 - Status: `md_ak detail --job 74284`.

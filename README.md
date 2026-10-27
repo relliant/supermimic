@@ -33,6 +33,10 @@ isolated DDS + MuJoCo simulation. It defaults to monitor-only and is **not yet
 hardware-qualified**. A successful simulation evaluation is not a safe-to-deploy
 claim; the deployment guide lists the remaining physical validation gates.
 
+For standalone ONNX-to-MuJoCo visualization with runtime motion selection,
+reference overlay and video recording (no DDS required), see
+[deployment/SIM2SIM.md](deployment/SIM2SIM.md).
+
 ## Layout
 
 | Path | What |

@@ -38,7 +38,7 @@ tasks:
     \necho \"=== 5. FK vs simulator (expected agreement ~1e-6) ===\"\n\"$PY\" tools/test_env.py --num_envs\
     \ 64\n\necho \"=== 6. training smoke including policy updates after warm-up ===\"\nRUN=/data/nas_ray/home/sia.luo/experiments/supermimic/smoke-$(date\
     \ -u +%Y%m%dT%H%M%SZ)\nmkdir -p \"$RUN\"\n\"$PY\" supermimic/train.py --log_dir \"$RUN\" --iterations\
-    \ 510 --ckpt_every 510 \\\n  --log_every 10 --num_envs 4096 --swanlab_mode offline\ntest -f \"$RUN/ckpt_000510.pt\"\
+    \ 510 --ckpt_every 510 \\\n  --log_every 10 --num_envs 4096 --swanlab_mode online\ntest -f \"$RUN/ckpt_000510.pt\"\
     \nmkdir -p \"$CODE/.cache\"\ngit hash-object local.patch > \"$CODE/.cache/smoke-passed\"\necho \"\
     SMOKE PASSED\"\n"
 - name: supermimic-train
@@ -54,15 +54,15 @@ tasks:
     \ --query-gpu=name,memory.total,driver_version --format=csv\ntest ! -e \"$RUN/train_log.csv\" || {\
     \ echo \"Existing run: choose a new output directory or explicitly resume\" >&2; exit 1; }\nmkdir\
     \ -p \"$RUN\"\n\"$PY\" supermimic/train.py --log_dir \"$RUN\" --iterations 20000 --ckpt_every 2000\
-    \ \\\n  --log_every 50 --num_envs 4096 --swanlab_mode offline 2>&1 | tee -a \"$RUN/stdout.log\"\n"
+    \ \\\n  --log_every 50 --num_envs 4096 --swanlab_mode online 2>&1 | tee -a \"$RUN/stdout.log\"\n"
 - name: supermimic-eval
   type: shell
   streaming: true
   cmd: "set -euo pipefail\nCODE=/data/nas_ray/home/sia.luo/supermimic\nPY=$CODE/.venv/bin/python\nRUN=/data/nas_ray/home/sia.luo/experiments/supermimic/lafan1_main\n\
     cd \"$CODE\"\nunset PYTHONPATH PYTHONHOME\n\n# No --watch: evaluates every checkpoint that has no\
     \ row in eval.csv yet, then exits.\n\"$PY\" supermimic/evaluate.py --run_dir \"$RUN\" --every 1 --swanlab_mode\
-    \ offline\ncat \"$RUN/eval.csv\"\n\"$PY\" tools/plot.py \"$RUN\" --out \"$RUN/success_curve.png\"\
-    \ || true\n# Report learning quality separately from whether the training process completed.\n\"$PY\"\
+    \ online\ncat \"$RUN/eval.csv\"\n\"$PY\" tools/plot.py \"$RUN\" --out \"$RUN/success_curve.png\" ||\
+    \ true\n# Report learning quality separately from whether the training process completed.\n\"$PY\"\
     \ - \"$RUN/eval.csv\" <<'PYREPORT'\nimport csv\nimport sys\nwith open(sys.argv[1]) as evaluation_file:\n\
     \    evaluations = list(csv.DictReader(evaluation_file))\nsuccessful = [row for row in evaluations\
     \ if float(row['norm_return']) >= 0.82 and int(row['n_failed']) == 0]\nprint('TARGET_REACHED', bool(successful),\

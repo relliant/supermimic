@@ -1,0 +1,10 @@
+# Optional Pico/GMR producer dependencies, separate from ONNX sim2sim.
+# Install xrobotoolkit_sdk separately for the actual Python/CPU ABI and PC Service.
+-r requirements.txt
+mink
+daqp
+scipy>=1.14
+rich
+opencv-python
+imageio
+loop-rate-limiters

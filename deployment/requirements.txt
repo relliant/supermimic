@@ -1,7 +1,9 @@
-# Small Isaac-free exporter environment; no training/Isaac installation needed.
+# Isaac-free exporter and standalone MuJoCo sim2sim environment.
 numpy
 torch
 onnx
 mujoco
-# Optional at export time, recommended to verify CPU inference parity.
+# Optional for export parity; required for the standalone sim2sim runner.
 onnxruntime
+# Independent local reference sender / sim2sim receiver.
+redis

@@ -222,8 +222,12 @@ def future_frames(frames: Any, frame_count: int, goal_frames: int) -> torch.Tens
     return _return_like(future.clamp(max=count - 1), frames)
 
 
-def build_goals(reference: Any, goal_frames: int) -> torch.Tensor | np.ndarray:
-    """Build MotionLib.goal for every frame, with K consecutive 73D futures."""
+def build_goals(reference: Any, goal_frames: int, *, hold_final_velocity: bool = False) -> torch.Tensor | np.ndarray:
+    """Build MotionLib.goal, holding pose but zeroing velocities beyond the clip.
+
+    ``hold_final_velocity`` reproduces older checkpoints trained before the
+    stationary clip-tail fix; recorded endpoint velocities are always retained.
+    """
     horizon = positive_integer(goal_frames, "goal_frames")
     rows = _as_tensor(reference, "reference", REFERENCE_DIM)
     if rows.ndim != 2 or rows.shape[0] < 1:
@@ -235,13 +239,22 @@ def build_goals(reference: Any, goal_frames: int) -> torch.Tensor | np.ndarray:
     angular_velocity_local = (inverse_rotation @ rows[:, 68:71, None]).squeeze(-1)
     frame_indices = torch.arange(rows.shape[0], device=rows.device)
     future = future_frames(frame_indices, rows.shape[0], horizon)
+    requested = frame_indices[:, None] + torch.arange(1, horizon + 1, device=rows.device)
+    recorded = (requested < rows.shape[0]).unsqueeze(-1)
+    linear_future = linear_velocity_local[future]
+    angular_future = angular_velocity_local[future]
+    joint_future = rows[future, 36:65]
+    if not hold_final_velocity:
+        linear_future = torch.where(recorded, linear_future, 0.0)
+        angular_future = torch.where(recorded, angular_future, 0.0)
+        joint_future = torch.where(recorded, joint_future, 0.0)
     heading_inverse = yaw_mat(rotation).transpose(-1, -2).unsqueeze(1)
     displacement = (heading_inverse @ (position[future] - position.unsqueeze(1)).unsqueeze(-1)).squeeze(-1)
     orientation = mat_to_6d(heading_inverse @ rotation[future])
     features = torch.cat(
         (
-            displacement, orientation, linear_velocity_local[future], angular_velocity_local[future],
-            rows[future, 7:36], rows[future, 36:65] * 0.1,
+            displacement, orientation, linear_future, angular_future,
+            rows[future, 7:36], joint_future * 0.1,
         ),
         dim=-1,
     ).reshape(rows.shape[0], GOAL_FRAME_DIM * horizon)
